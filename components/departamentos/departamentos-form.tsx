@@ -31,13 +31,17 @@ export function DepartamentosForm({ onSuccess, initialData, isEditing = false }:
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
+  function limparFormulario() {
+    setFormData({ nome: "", ativo: true });
+  }
+
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+    e.preventDefault();
     if (!formData.nome || formData.nome.trim() === "") {
-      alert("O nome do departamento é obrigatório.")
-      return
+      alert("O nome do departamento é obrigatório.");
+      return;
     }
-    let error
+    let error;
     if (isEditing && initialData?.id) {
       ({ error } = await import("@/lib/supabase/client").then(({ supabase }) =>
         supabase.from("departamentos").update({
@@ -45,7 +49,10 @@ export function DepartamentosForm({ onSuccess, initialData, isEditing = false }:
           ativo: formData.ativo,
           empresa_id: userData?.empresa_id ?? null,
         }).eq("id", initialData.id)
-      ))
+      ));
+      if (!error && typeof window !== "undefined") {
+        window.dispatchEvent(new Event("departamentosAtualizado"));
+      }
     } else {
       ({ error } = await import("@/lib/supabase/client").then(({ supabase }) =>
         supabase.from("departamentos").insert([
@@ -55,7 +62,10 @@ export function DepartamentosForm({ onSuccess, initialData, isEditing = false }:
             empresa_id: userData?.empresa_id ?? null,
           },
         ])
-      ))
+      ));
+      if (!error && typeof window !== "undefined") {
+        window.dispatchEvent(new Event("departamentosAtualizado"));
+      }
     }
     if (error) {
       alert("Erro ao salvar departamento: " + error.message)
@@ -80,18 +90,21 @@ export function DepartamentosForm({ onSuccess, initialData, isEditing = false }:
           onChange={(e) => handleInputChange("nome", e.target.value)}
         />
       </div>
-      <div className="flex items-center space-x-2">
-        <input
-          id="ativo"
-          type="checkbox"
-          checked={formData.ativo}
-          onChange={(e) => handleInputChange("ativo", e.target.checked)}
-        />
-        <Label htmlFor="ativo">Departamento Ativo</Label>
+      <div className="space-y-2">
+        <Label htmlFor="ativo">
+          <input
+            id="ativo"
+            type="checkbox"
+            checked={formData.ativo}
+            onChange={(e) => handleInputChange("ativo", e.target.checked)}
+            className="mr-2"
+          />
+          Departamento Ativo
+        </Label>
       </div>
       <Button type="submit" className="w-full">
-        {isEditing ? "Atualizar Departamento" : "Salvar Departamento"}
+        {isEditing ? "Salvar Edição" : "Salvar Departamento"}
       </Button>
     </form>
-  )
+  );
 }

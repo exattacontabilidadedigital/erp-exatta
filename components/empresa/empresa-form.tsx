@@ -2,7 +2,9 @@
 
 import type React from "react"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
+import { useAuth } from "@/contexts/auth-context"
+import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,53 +13,132 @@ import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Save, X, Upload, ImageIcon, Trash2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-
 export function EmpresaForm() {
   const { toast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
+  const { empresaData, loading, userData } = useAuth()
+  // Força recarregamento dos dados da empresa ao montar o componente
+  useEffect(() => {
+    if (userData?.empresa_id) {
+      // Buscar dados atualizados da empresa
+      supabase
+        .from("empresas")
+        .select("*")
+        .eq("id", userData.empresa_id)
+        .single()
+        .then(({ data }) => {
+          if (data) populateForm(data)
+        })
+    }
+  }, [])
+  const [formData, setFormData] = useState<any>({})
 
-  const [formData, setFormData] = useState({
-    logo: null as File | null,
-    logoPreview: null as string | null,
+    // Função para upload da logo no Supabase Storage (bucket: logos)
+    async function uploadLogoToStorage(file: File) {
+      setIsLoading(true)
+      try {
+        const fileExt = file.name.split('.').pop()
+        const fileName = `logos_${userData?.empresa_id}_${Date.now()}.${fileExt}`
 
-    // Dados básicos
-    razaoSocial: "Sistema Contábil Ltda",
-    nomeFantasia: "Sistema Contábil",
-    cnpj: "12.345.678/0001-90",
-    inscricaoEstadual: "123.456.789.012",
-    inscricaoMunicipal: "12345678",
+        // Envia para o bucket "logos"
+        const { data, error } = await supabase.storage.from("logos").upload(fileName, file, {
+          cacheControl: "3600",
+          upsert: true,
+        })
+        if (error) throw error
 
-    // Endereço
-    endereco: "Rua das Empresas, 123",
-    complemento: "Sala 456",
-    bairro: "Centro",
-    cidade: "São Paulo",
-    estado: "SP",
-    cep: "01234-567",
+        // Recupera URL pública do arquivo
+        const { data: urlData } = supabase.storage.from("logos").getPublicUrl(fileName)
 
-    // Contatos
-    telefone: "(11) 3333-4444",
-    celular: "(11) 99999-9999",
-    email: "contato@sistemacontabil.com.br",
-    site: "www.sistemacontabil.com.br",
+        if (urlData?.publicUrl) {
+          setFormData((prev: any) => ({
+            ...prev,
+            logoPreview: urlData.publicUrl,
+            logo_url: urlData.publicUrl,
+          }))
+          toast({
+            title: "Logo enviada com sucesso!",
+            description: "Clique em Salvar para gravar a imagem no cadastro da empresa.",
+            variant: "default",
+          })
+        }
+      } catch (err: any) {
+        console.error('Erro ao enviar logo:', err)
+        toast({
+          title: "Erro ao enviar logo",
+          description: err.message,
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+  // Função para popular os dados do formulário
+  // Mapeamento entre valor do banco e valor do Select
+  const naturezaMap: Record<string, string> = {
+    ltda: "Sociedade Limitada",
+    sa: "Sociedade Anônima",
+    mei: "Microempreendedor Individual",
+    eireli: "EIRELI",
+  }
+  const naturezaReverseMap: Record<string, string> = {
+    "Sociedade Limitada": "ltda",
+    "Sociedade Anônima": "sa",
+    "Microempreendedor Individual": "mei",
+    "EIRELI": "eireli",
+  }
+  const normalizeNatureza = (value: string | null | undefined) => {
+    if (!value) return ""
+    // Se vier do banco como 'ltda', retorna label
+    if (naturezaMap[value]) return naturezaMap[value]
+    // Se vier como label, retorna label
+    if (Object.keys(naturezaReverseMap).includes(value)) return value
+    return ""
+  }
+  const populateForm = (data: any) => {
+    setFormData({
+      logo: null,
+      logoPreview: data.logo_url || null,
+      razaoSocial: data.razao_social || "",
+      nomeFantasia: data.nome_fantasia || "",
+      cnpj: data.cnpj || "",
+      inscricaoEstadual: data.inscricao_estadual || "",
+      inscricaoMunicipal: data.inscricao_municipal || "",
+      cep: data.cep || "",
+      endereco: data.endereco || "",
+      numero: data.numero || "",
+      complemento: data.complemento || "",
+      bairro: data.bairro || "",
+      cidade: data.cidade || "",
+      estado: data.estado || "",
+  telefone: data.telefone || "",
+  celular: data.celular || "",
+      email: data.email || "",
+      site: data.site || "",
+      logo_url: data.logo_url || "",
+      banco: data.banco || "",
+      agencia: data.agencia || "",
+      conta: data.conta || "",
+      pix: data.pix || "",
+      regimeTributario: data.regime_tributario || "",
+  naturezaJuridica: normalizeNatureza(data.natureza_juridica),
+      observacoes: data.observacoes || "",
+    })
+  }
 
-    // Dados bancários
-    banco: "001 - Banco do Brasil",
-    agencia: "1234-5",
-    conta: "12345-6",
-
-    // Configurações fiscais
-    regimeTributario: "lucro_presumido",
-    naturezaJuridica: "ltda",
-
-    // Observações
-    observacoes: "",
-  })
+  useEffect(() => {
+    // Popula o formulário apenas quando loading for false e empresaData disponível
+    if (!loading && empresaData) {
+      populateForm(empresaData)
+    } else if (!loading && !empresaData) {
+      setFormData({})
+    }
+  }, [empresaData, loading])
 
   const handleInputChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
+    setFormData((prev: any) => ({ ...prev, [field]: value }))
   }
 
   const handleFileUpload = (file: File) => {
@@ -69,9 +150,7 @@ export function EmpresaForm() {
       })
       return
     }
-
     if (file.size > 5 * 1024 * 1024) {
-      // 5MB
       toast({
         title: "Erro",
         description: "O arquivo deve ter no máximo 5MB.",
@@ -79,16 +158,16 @@ export function EmpresaForm() {
       })
       return
     }
-
     const reader = new FileReader()
     reader.onload = (e) => {
-      setFormData((prev) => ({
+      setFormData((prev: any) => ({
         ...prev,
         logo: file,
         logoPreview: e.target?.result as string,
       }))
     }
     reader.readAsDataURL(file)
+  uploadLogoToStorage(file)
   }
 
   const handleDrag = (e: React.DragEvent) => {
@@ -105,7 +184,6 @@ export function EmpresaForm() {
     e.preventDefault()
     e.stopPropagation()
     setDragActive(false)
-
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFileUpload(e.dataTransfer.files[0])
     }
@@ -118,7 +196,7 @@ export function EmpresaForm() {
   }
 
   const removeLogo = () => {
-    setFormData((prev) => ({
+    setFormData((prev: any) => ({
       ...prev,
       logo: null,
       logoPreview: null,
@@ -126,33 +204,78 @@ export function EmpresaForm() {
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
     }
+  setFormData((prev: any) => ({
+    ...prev,
+    logo_url: ""
+  }))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-
     try {
-      // Simular salvamento (aqui seria feita a integração com a API)
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      console.log("Dados da empresa:", formData)
-
+      if (!empresaData?.id) throw new Error("Empresa não encontrada")
+      // Log do valor de logo_url antes de salvar
+      console.log('Valor de logo_url antes de salvar:', formData.logo_url)
+      // Monta objeto para atualização (removendo campos não persistentes)
+      const updateData = {
+        razao_social: formData.razaoSocial,
+        nome_fantasia: formData.nomeFantasia,
+        cnpj: formData.cnpj,
+        inscricao_estadual: formData.inscricaoEstadual,
+        inscricao_municipal: formData.inscricaoMunicipal,
+        cep: formData.cep,
+        endereco: formData.endereco,
+        numero: formData.numero,
+        complemento: formData.complemento,
+        bairro: formData.bairro,
+        cidade: formData.cidade,
+        estado: formData.estado,
+        telefone: formData.telefone,
+        celular: formData.celular,
+        email: formData.email,
+        site: formData.site,
+        banco: formData.banco,
+        agencia: formData.agencia,
+        conta: formData.conta,
+        pix: formData.pix,
+        regime_tributario: formData.regimeTributario,
+        natureza_juridica: naturezaReverseMap[formData.naturezaJuridica] || "",
+        observacoes: formData.observacoes,
+        logo_url: formData.logo_url,
+      }
+      const { data, error } = await supabase
+        .from("empresas")
+        .update(updateData)
+        .eq("id", empresaData.id)
+        .select()
+      if (error) throw error
+      if (data && data[0]) {
+        populateForm(data[0])
+      }
       toast({
         title: "Sucesso!",
         description: "Dados da empresa salvos com sucesso.",
       })
-    } catch (error) {
+      window.alert("Dados da empresa salvos com sucesso.")
+    } catch (error: any) {
       toast({
         title: "Erro",
-        description: "Erro ao salvar os dados da empresa.",
+        description: error.message || "Erro ao salvar os dados da empresa.",
         variant: "destructive",
       })
+      window.alert(error.message || "Erro ao salvar os dados da empresa.")
     } finally {
       setIsLoading(false)
     }
   }
 
+  if (loading) {
+    return <div>Carregando dados da empresa...</div>
+  }
+  if (!empresaData) {
+    return <div>Nenhuma empresa encontrada para o usuário logado.</div>
+  }
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <Card>
@@ -495,10 +618,10 @@ export function EmpresaForm() {
                   <SelectValue placeholder="Selecione a natureza" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ltda">Sociedade Limitada</SelectItem>
-                  <SelectItem value="sa">Sociedade Anônima</SelectItem>
-                  <SelectItem value="mei">Microempreendedor Individual</SelectItem>
-                  <SelectItem value="eireli">EIRELI</SelectItem>
+                  <SelectItem value="Sociedade Limitada">Sociedade Limitada</SelectItem>
+                  <SelectItem value="Sociedade Anônima">Sociedade Anônima</SelectItem>
+                  <SelectItem value="Microempreendedor Individual">Microempreendedor Individual</SelectItem>
+                  <SelectItem value="EIRELI">EIRELI</SelectItem>
                 </SelectContent>
               </Select>
             </div>

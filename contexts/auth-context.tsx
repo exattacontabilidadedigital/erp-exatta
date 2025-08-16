@@ -23,15 +23,28 @@ interface EmpresaData {
   razao_social: string
   nome_fantasia: string | null
   cnpj: string
-  email: string | null
-  telefone: string | null
+  inscricao_estadual: string | null
+  inscricao_municipal: string | null
+  cep: string | null
   endereco: string | null
+  numero: string | null
+  complemento: string | null
+  bairro: string | null
   cidade: string | null
   estado: string | null
-  cep: string | null
-  regime_tributario: string | null
+  telefone: string | null
+  email: string | null
+  site: string | null
   logo_url: string | null
+  banco: string | null
+  agencia: string | null
+  conta: string | null
+  pix: string | null
+  regime_tributario: string | null
+  observacoes: string | null
   ativo: boolean
+  created_at?: string
+  updated_at?: string
 }
 
 interface AuthContextType {
