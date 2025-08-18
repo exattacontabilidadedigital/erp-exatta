@@ -8,6 +8,7 @@ import { LancamentosFiltros } from "@/components/lancamentos/lancamentos-filtros
 import { LancamentosImportModal } from "@/components/lancamentos/lancamentos-import-modal"
 import { LancamentosViewModal } from "@/components/lancamentos/lancamentos-view-modal"
 import { LancamentosDeleteModal } from "@/components/lancamentos/lancamentos-delete-modal"
+import Header from "@/components/ui/header"
 
 export default function LancamentosPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -159,7 +160,9 @@ export default function LancamentosPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <>
+      <Header />
+      <div className="min-h-screen bg-gray-50">
       <LancamentosHeader
         onNovoLancamento={handleNovoLancamento}
         onToggleFiltros={handleToggleFiltros}
@@ -192,6 +195,7 @@ export default function LancamentosPage() {
         onConfirm={handleConfirmDelete}
         lancamento={selectedLancamento}
       />
-    </div>
+      </div>
+    </>
   )
 }

@@ -1,10 +1,13 @@
 "use client"
 import { MinhaContaHeader } from "@/components/minha-conta/minha-conta-header"
 import { MinhaContaForm } from "@/components/minha-conta/minha-conta-form"
+import Header from "@/components/ui/header"
 
 export default function MinhaContaPage() {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <>
+      <Header />
+      <div className="min-h-screen bg-gray-50">
       <MinhaContaHeader />
 
       <main className="container mx-auto px-4 py-6">
@@ -19,6 +22,7 @@ export default function MinhaContaPage() {
           </div>
         </div>
       </main>
-    </div>
+      </div>
+    </>
   )
 }

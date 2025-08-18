@@ -1,4 +1,5 @@
 "use client"
+import Header from "@/components/ui/header"
 import { DepartamentosForm } from "@/components/departamentos/departamentos-form"
 import { ResponsaveisForm } from "@/components/responsaveis/responsaveis-form"
 import { TiposCentroCustosForm } from "@/components/tipos-centro-custos/tipos-centro-custos-form"
@@ -18,6 +19,7 @@ import { CentroCustosAnaliseModal } from "@/components/centro-custos/centro-cust
 import { CentroCustosViewModal } from "@/components/centro-custos/centro-custos-view-modal"
 import { CentroCustosDeleteModal } from "@/components/centro-custos/centro-custos-delete-modal"
 import { CentroCustosRelatorioIndividualModal } from "@/components/centro-custos/centro-custos-relatorio-individual-modal"
+
 
 export default function CentroCustosPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -156,7 +158,8 @@ export default function CentroCustosPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50" style={{ fontFamily: 'GeistSans, Arial, sans-serif' }}>
+      <Header />
       {/* Modais de cadastro */}
       {isDepartamentosModalOpen && (
         <Dialog open={isDepartamentosModalOpen} onOpenChange={() => setIsDepartamentosModalOpen(false)}>
@@ -199,7 +202,7 @@ export default function CentroCustosPage() {
       )}
       {/* Menu Cadastros */}
       <nav className="bg-white shadow mb-4">
-        
+       
       </nav>
       <CentroCustosHeader
         onNovoCentro={handleNovoCentro}

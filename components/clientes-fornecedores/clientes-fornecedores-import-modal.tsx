@@ -5,8 +5,12 @@ import type React from "react"
 import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Upload, FileText, Download, CheckCircle } from "lucide-react"
+import { Upload, FileText, Download, CheckCircle, AlertCircle, X } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useImport } from "@/hooks/use-import"
+import { useAuth } from "@/contexts/auth-context"
+import { CSVParser } from "@/lib/csv-parser"
 
 interface ClientesFornecedoresImportModalProps {
   isOpen: boolean
@@ -15,14 +19,22 @@ interface ClientesFornecedoresImportModalProps {
 
 export function ClientesFornecedoresImportModal({ isOpen, onClose }: ClientesFornecedoresImportModalProps) {
   const [file, setFile] = useState<File | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [success, setSuccess] = useState(false)
+  const [importResult, setImportResult] = useState<any>(null)
+  const { isImporting, progress, importClientesFornecedores } = useImport()
+  const { userData } = useAuth()
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0]
     if (selectedFile) {
+      const validation = CSVParser.validateCSVFile(selectedFile)
+      
+      if (!validation.valid) {
+        alert(validation.error)
+        return
+      }
+
       setFile(selectedFile)
+      setImportResult(null)
     }
   }
 
@@ -30,7 +42,15 @@ export function ClientesFornecedoresImportModal({ isOpen, onClose }: ClientesFor
     event.preventDefault()
     const droppedFile = event.dataTransfer.files[0]
     if (droppedFile && (droppedFile.type === "text/csv" || droppedFile.name.endsWith(".csv"))) {
+      const validation = CSVParser.validateCSVFile(droppedFile)
+      
+      if (!validation.valid) {
+        alert(validation.error)
+        return
+      }
+
       setFile(droppedFile)
+      setImportResult(null)
     }
   }
 
@@ -39,28 +59,28 @@ export function ClientesFornecedoresImportModal({ isOpen, onClose }: ClientesFor
   }
 
   const handleImport = async () => {
-    if (!file) return
+    if (!file || !userData?.empresa_id) return
 
-    setUploading(true)
-    setProgress(0)
+    const result = await importClientesFornecedores(file, userData.empresa_id)
+    setImportResult(result)
 
-    // Simular upload
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval)
-          setUploading(false)
-          setSuccess(true)
-          setTimeout(() => {
-            setSuccess(false)
-            setFile(null)
-            onClose()
-          }, 2000)
-          return 100
-        }
-        return prev + 10
-      })
-    }, 200)
+    if (result.success) {
+      // Dispara evento para atualizar a lista
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("clientesFornecedoresAtualizado"))
+      }
+    }
+  }
+
+  const handleClose = () => {
+    setFile(null)
+    setImportResult(null)
+    onClose()
+  }
+
+  const removeFile = () => {
+    setFile(null)
+    setImportResult(null)
   }
 
   const downloadModelo = () => {
@@ -106,7 +126,7 @@ export function ClientesFornecedoresImportModal({ isOpen, onClose }: ClientesFor
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -131,47 +151,88 @@ export function ClientesFornecedoresImportModal({ isOpen, onClose }: ClientesFor
             </Button>
           </div>
 
-          {!success && (
+          {!importResult?.success && (
             <div
               className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors"
               onDrop={handleDrop}
               onDragOver={handleDragOver}
             >
-              <FileText className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+              <div className="flex items-center justify-center space-x-2 mb-4">
+                <FileText className="h-12 w-12 text-gray-400" />
+                {file && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={removeFile}
+                    disabled={isImporting}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
               <div className="space-y-2">
                 <p className="text-sm font-medium">{file ? file.name : "Arraste o arquivo CSV aqui"}</p>
                 <p className="text-xs text-gray-500">ou</p>
                 <label htmlFor="file-upload" className="cursor-pointer">
                   <span className="text-sm text-blue-600 hover:text-blue-500">clique para selecionar</span>
-                  <input id="file-upload" type="file" accept=".csv" onChange={handleFileSelect} className="hidden" />
+                  <input id="file-upload" type="file" accept=".csv" onChange={handleFileSelect} className="hidden" disabled={isImporting} />
                 </label>
               </div>
             </div>
           )}
 
-          {uploading && (
+          {/* Progresso da importação */}
+          {isImporting && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <span>Importando...</span>
-                <span>{progress}%</span>
+                <span>{progress.percentage}%</span>
               </div>
-              <Progress value={progress} className="w-full" />
+              <Progress value={progress.percentage} className="w-full" />
+              <div className="text-xs text-gray-500">
+                {progress.processed} de {progress.total} processados
+                {progress.errors > 0 && (
+                  <span className="text-red-500 ml-2">({progress.errors} erros)</span>
+                )}
+              </div>
             </div>
           )}
 
-          {success && (
-            <div className="flex items-center justify-center space-x-2 text-green-600 py-4">
-              <CheckCircle className="h-5 w-5" />
-              <span className="font-medium">Importação concluída com sucesso!</span>
-            </div>
+          {/* Resultado da importação */}
+          {importResult && (
+            <Alert className={importResult.success ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}>
+              {importResult.success ? (
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              ) : (
+                <AlertCircle className="h-4 w-4 text-red-600" />
+              )}
+              <AlertDescription className={importResult.success ? "text-green-800" : "text-red-800"}>
+                <div className="space-y-2">
+                  <p>{importResult.message}</p>
+                  {importResult.errors.length > 0 && (
+                    <details className="text-xs">
+                      <summary className="cursor-pointer font-medium">Ver erros ({importResult.errors.length})</summary>
+                      <ul className="mt-2 space-y-1 list-disc list-inside">
+                        {importResult.errors.slice(0, 5).map((error: string, index: number) => (
+                          <li key={index}>{error}</li>
+                        ))}
+                        {importResult.errors.length > 5 && (
+                          <li>... e mais {importResult.errors.length - 5} erro(s)</li>
+                        )}
+                      </ul>
+                    </details>
+                  )}
+                </div>
+              </AlertDescription>
+            </Alert>
           )}
 
           <div className="flex justify-end space-x-2 pt-4">
-            <Button variant="outline" onClick={onClose}>
+            <Button variant="outline" onClick={handleClose} disabled={isImporting}>
               Cancelar
             </Button>
-            <Button onClick={handleImport} disabled={!file || uploading || success}>
-              {uploading ? "Importando..." : "Importar"}
+            <Button onClick={handleImport} disabled={!file || isImporting}>
+              {isImporting ? "Importando..." : "Importar"}
             </Button>
           </div>
         </div>

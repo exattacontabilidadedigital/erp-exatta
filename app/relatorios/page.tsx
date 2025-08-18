@@ -5,12 +5,15 @@ import { RelatoriosHeader } from "@/components/relatorios/relatorios-header"
 import { RelatoriosFiltros } from "@/components/relatorios/relatorios-filtros"
 import { RelatoriosList } from "@/components/relatorios/relatorios-list"
 import { RelatoriosVisualizacao } from "@/components/relatorios/relatorios-visualizacao"
+import Header from "@/components/ui/header"
 
 export default function RelatoriosPage() {
   const [relatorioSelecionado, setRelatorioSelecionado] = useState("balancete")
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <>
+      <Header />
+      <div className="min-h-screen bg-gray-50">
       <RelatoriosHeader />
 
       <main className="container mx-auto px-4 py-6 space-y-6">
@@ -28,6 +31,7 @@ export default function RelatoriosPage() {
           </div>
         </div>
       </main>
-    </div>
+      </div>
+    </>
   )
 }

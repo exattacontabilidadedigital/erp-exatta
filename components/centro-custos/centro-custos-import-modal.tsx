@@ -5,8 +5,12 @@ import type React from "react"
 import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Upload, FileText, Download, CheckCircle } from "lucide-react"
+import { Upload, FileText, Download, CheckCircle, AlertCircle, X } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useImport } from "@/hooks/use-import"
+import { useAuth } from "@/contexts/auth-context"
+import { CSVParser } from "@/lib/csv-parser"
 
 interface CentroCustosImportModalProps {
   isOpen: boolean
@@ -15,15 +19,22 @@ interface CentroCustosImportModalProps {
 
 export function CentroCustosImportModal({ isOpen, onClose }: CentroCustosImportModalProps) {
   const [file, setFile] = useState<File | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [success, setSuccess] = useState(false)
+  const [importResult, setImportResult] = useState<any>(null)
+  const { isImporting, progress, importCentroCustos } = useImport()
+  const { userData } = useAuth()
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0]
     if (selectedFile) {
+      const validation = CSVParser.validateCSVFile(selectedFile)
+      
+      if (!validation.valid) {
+        alert(validation.error)
+        return
+      }
+
       setFile(selectedFile)
-      setSuccess(false)
+      setImportResult(null)
     }
   }
 
@@ -31,8 +42,15 @@ export function CentroCustosImportModal({ isOpen, onClose }: CentroCustosImportM
     event.preventDefault()
     const droppedFile = event.dataTransfer.files[0]
     if (droppedFile && (droppedFile.type === "text/csv" || droppedFile.name.endsWith(".csv"))) {
+      const validation = CSVParser.validateCSVFile(droppedFile)
+      
+      if (!validation.valid) {
+        alert(validation.error)
+        return
+      }
+
       setFile(droppedFile)
-      setSuccess(false)
+      setImportResult(null)
     }
   }
 
@@ -40,24 +58,29 @@ export function CentroCustosImportModal({ isOpen, onClose }: CentroCustosImportM
     event.preventDefault()
   }
 
-  const handleUpload = async () => {
-    if (!file) return
+  const handleImport = async () => {
+    if (!file || !userData?.empresa_id) return
 
-    setUploading(true)
-    setProgress(0)
+    const result = await importCentroCustos(file, userData.empresa_id)
+    setImportResult(result)
 
-    // Simular upload
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval)
-          setUploading(false)
-          setSuccess(true)
-          return 100
-        }
-        return prev + 10
-      })
-    }, 200)
+    if (result.success) {
+      // Dispara evento para atualizar a lista
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("centroCustosAtualizado"))
+      }
+    }
+  }
+
+  const handleClose = () => {
+    setFile(null)
+    setImportResult(null)
+    onClose()
+  }
+
+  const removeFile = () => {
+    setFile(null)
+    setImportResult(null)
   }
 
   const downloadModeloCsv = () => {

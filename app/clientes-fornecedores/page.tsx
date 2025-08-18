@@ -7,6 +7,7 @@ import { ClientesFornecedoresModal } from "@/components/clientes-fornecedores/cl
 import { ClientesFornecedoresImportModal } from "@/components/clientes-fornecedores/clientes-fornecedores-import-modal"
 import { ClientesFornecedoresRelatorioModal } from "@/components/clientes-fornecedores/clientes-fornecedores-relatorio-modal"
 import { ClientesFornecedoresDeleteModal } from "@/components/clientes-fornecedores/clientes-fornecedores-delete-modal"
+import Header from "@/components/ui/header"
 
 export default function ClientesFornecedoresPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -134,7 +135,9 @@ export default function ClientesFornecedoresPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <>
+      <Header />
+      <div className="min-h-screen bg-gray-50">
       <ClientesFornecedoresHeader
         onNovoClienteFornecedor={handleNovoClienteFornecedor}
         onImportar={handleImportar}
@@ -163,6 +166,7 @@ export default function ClientesFornecedoresPage() {
         isOpen={isRelatorioModalOpen}
         onClose={() => setIsRelatorioModalOpen(false)}
       />
-    </div>
+      </div>
+    </>
   )
 }
