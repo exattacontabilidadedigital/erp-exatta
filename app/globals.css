@@ -121,3 +121,18 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Classe personalizada para contas sintéticas */
+.conta-sintetica {
+  font-weight: 700 !important;
+}
+
+.conta-analitica {
+  font-weight: 400 !important;
+}
+
+/* Garantir fonte monospace para códigos */
+.codigo-conta {
+  font-family: Consolas, Monaco, 'Courier New', monospace !important;
+  font-weight: 500 !important;
+}

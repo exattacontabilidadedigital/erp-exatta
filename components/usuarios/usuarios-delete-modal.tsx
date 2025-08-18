@@ -5,11 +5,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { AlertTriangle, Trash2, X } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { supabase } from "@/lib/supabase/client"
 
 interface UsuariosDeleteModalProps {
   isOpen: boolean
   onClose: () => void
   usuario?: any
+  onDeleted?: () => void
 }
 
 export function UsuariosDeleteModal({ isOpen, onClose, usuario }: UsuariosDeleteModalProps) {
@@ -18,17 +20,19 @@ export function UsuariosDeleteModal({ isOpen, onClose, usuario }: UsuariosDelete
 
   const handleDelete = async () => {
     setIsLoading(true)
-
     try {
-      // Simular exclusão
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
+      if (!usuario?.id) throw new Error("Usuário inválido")
+      const { error } = await supabase
+        .from("usuarios")
+        .delete()
+        .eq("id", usuario.id)
+      if (error) throw error
       toast({
         title: "Usuário excluído",
         description: `O usuário ${usuario?.nome} foi excluído com sucesso.`,
       })
-
       onClose()
+      if (typeof arguments[0]?.onDeleted === "function") arguments[0].onDeleted()
     } catch (error) {
       toast({
         title: "Erro",
