@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,7 +14,7 @@ import { supabase } from "@/lib/supabase/client"
 interface PlanoContasFormProps {
   onSuccess?: () => void
   initialData?: any
-  contaPai?: string
+  contaPai?: string // aqui vamos passar o id da conta pai
   isEditing?: boolean
 }
 
@@ -25,83 +24,90 @@ export function PlanoContasForm({
   contaPai = "",
   isEditing = false,
 }: PlanoContasFormProps) {
+  const { userData } = require("@/contexts/auth-context").useAuth();
   const [formData, setFormData] = useState({
     codigo: "",
     nome: "",
     tipo: "",
-    contaPai: "",
+    contaPaiId: "", // agora trabalha com id
     natureza: "",
     nivel: "",
     descricao: "",
     ativa: true,
   })
 
+  const [contasPai, setContasPai] = useState<any[]>([])
+
+  // Carrega contas pai do banco
+  useEffect(() => {
+    const fetchContasPai = async () => {
+      const { data, error } = await supabase
+        .from("plano_contas")
+        .select("id, codigo, nome")
+        .order("codigo", { ascending: true })
+
+      if (!error && data) {
+        setContasPai(data)
+      }
+    }
+    fetchContasPai()
+  }, [])
+
   useEffect(() => {
     if (initialData) {
+      const contaPaiId = initialData.contaPaiId ?? initialData.conta_pai_id ?? "";
+      console.log("[PlanoContasForm] contaPaiId recebido:", contaPaiId);
+      console.log("[PlanoContasForm] contasPai disponíveis:", contasPai);
       setFormData({
-        codigo: initialData.codigo || "",
-        nome: initialData.nome || "",
-        tipo: initialData.tipo || "",
-        contaPai: initialData.conta_pai_id ? initialData.conta_pai_id : "",
-        natureza: initialData.natureza || "",
+        codigo: initialData.codigo ?? "",
+        nome: initialData.nome ?? "",
+        tipo: initialData.tipo ? String(initialData.tipo).toLowerCase() : "",
+        contaPaiId,
+        natureza: initialData.natureza ? String(initialData.natureza).toLowerCase() : "",
         nivel: initialData.nivel ? String(initialData.nivel) : "",
-        descricao: initialData.descricao || "",
-        ativa: initialData.ativo !== undefined ? initialData.ativo : true,
+        descricao: initialData.descricao ?? "",
+        ativa: initialData.ativo ?? true,
       })
     } else if (contaPai) {
-      // Para nova subconta, preenche a conta pai
-      setFormData((prev) => ({
-        ...prev,
-        contaPai: contaPai,
-      }))
+      setFormData((prev) => ({ ...prev, contaPaiId: contaPai }))
     }
-  }, [initialData, contaPai])
+  }, [initialData, contaPai, contasPai])
 
   const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
     // Validação extra para natureza
     const naturezaValida = formData.natureza === "debito" || formData.natureza === "credito"
     if (!naturezaValida) {
       alert("Natureza inválida! Selecione 'Devedora' ou 'Credora'.")
       return
     }
-    e.preventDefault()
-    let contaPaiId: string | null = null
-    if (formData.contaPai) {
-      // Busca o id da conta pai pelo código
-      const { data: contaPaiData, error: contaPaiError } = await supabase
-        .from("plano_contas")
-        .select("id")
-        .eq("codigo", formData.contaPai)
-      if (contaPaiError) {
-        alert("Erro ao buscar conta pai: " + contaPaiError.message)
-        return
-      }
-      contaPaiId = Array.isArray(contaPaiData) && contaPaiData.length > 0 ? contaPaiData[0].id : null
-    }
-        // Monta o objeto para inserir/atualizar
+
     const novaConta = {
       codigo: formData.codigo,
       nome: formData.nome,
       tipo: formData.tipo,
-      conta_pai_id: contaPaiId,
+      conta_pai_id: formData.contaPaiId || null,
       natureza: formData.natureza,
-      nivel: formData.nivel,
-      descricao: formData.descricao,
+      nivel: formData.nivel !== "" ? Number(formData.nivel) : null,
+      descricao: formData.descricao ?? null,
       ativo: formData.ativa,
-      status: 'ativo',
+      status: "ativo",
+      empresa_id: userData?.empresa_id ?? null,
     }
-        let error
-        if (isEditing && initialData?.id) {
-          // Atualiza conta existente
-          ({ error } = await supabase.from("plano_contas").update(novaConta).eq("id", initialData.id))
-        } else {
-          // Cria nova conta
-          ({ error } = await supabase.from("plano_contas").insert([novaConta]))
-        }
+
+    let error
+    if (isEditing && initialData?.id) {
+      ;({ error } = await supabase.from("plano_contas").update(novaConta).eq("id", initialData.id))
+    } else {
+      ;({ error } = await supabase.from("plano_contas").insert([novaConta]))
+    }
+
     if (error) {
       alert("Erro ao salvar plano de contas: " + error.message)
       return
     }
+
     if (onSuccess) {
       onSuccess()
     }
@@ -117,7 +123,7 @@ export function PlanoContasForm({
       codigo: "",
       nome: "",
       tipo: "",
-      contaPai: contaPai || "", // Mantém conta pai se for subconta
+      contaPaiId: contaPai || "", // Mantém conta pai se for subconta
       natureza: "",
       nivel: "",
       descricao: "",
@@ -152,7 +158,7 @@ export function PlanoContasForm({
       {/* Tipo de Conta */}
       <div className="space-y-2">
         <Label htmlFor="tipo">Tipo de Conta *</Label>
-        <Select value={formData.tipo} onValueChange={(value) => handleInputChange("tipo", value)}>
+        <Select value={formData.tipo || undefined} onValueChange={(value) => handleInputChange("tipo", value)}>
           <SelectTrigger>
             <SelectValue placeholder="Selecione o tipo" />
           </SelectTrigger>
@@ -169,19 +175,19 @@ export function PlanoContasForm({
       {/* Conta Pai */}
       <div className="space-y-2">
         <Label htmlFor="contaPai">Conta Pai</Label>
-        <Select value={formData.contaPai} onValueChange={(value) => handleInputChange("contaPai", value)}>
+        <Select
+          value={formData.contaPaiId || undefined}
+          onValueChange={(value) => handleInputChange("contaPaiId", value)}
+        >
           <SelectTrigger>
             <SelectValue placeholder="Selecione a conta pai" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="1">1 - Ativo</SelectItem>
-            <SelectItem value="1.1">1.1 - Ativo Circulante</SelectItem>
-            <SelectItem value="1.1.01">1.1.01 - Disponível</SelectItem>
-            <SelectItem value="2">2 - Passivo</SelectItem>
-            <SelectItem value="2.1">2.1 - Passivo Circulante</SelectItem>
-            <SelectItem value="3">3 - Patrimônio Líquido</SelectItem>
-            <SelectItem value="4">4 - Receitas</SelectItem>
-            <SelectItem value="5">5 - Despesas</SelectItem>
+            {contasPai.map((conta) => (
+              <SelectItem key={conta.id} value={conta.id}>
+                {conta.codigo} - {conta.nome}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -189,7 +195,10 @@ export function PlanoContasForm({
       {/* Natureza */}
       <div className="space-y-2">
         <Label htmlFor="natureza">Natureza *</Label>
-        <Select value={formData.natureza} onValueChange={(value) => handleInputChange("natureza", value)}>
+        <Select
+          value={formData.natureza || undefined}
+          onValueChange={(value) => handleInputChange("natureza", value)}
+        >
           <SelectTrigger>
             <SelectValue placeholder="Selecione a natureza" />
           </SelectTrigger>
@@ -203,7 +212,7 @@ export function PlanoContasForm({
       {/* Nível */}
       <div className="space-y-2">
         <Label htmlFor="nivel">Nível Hierárquico *</Label>
-        <Select value={formData.nivel} onValueChange={(value) => handleInputChange("nivel", value)}>
+        <Select value={formData.nivel || undefined} onValueChange={(value) => handleInputChange("nivel", value)}>
           <SelectTrigger>
             <SelectValue placeholder="Selecione o nível" />
           </SelectTrigger>

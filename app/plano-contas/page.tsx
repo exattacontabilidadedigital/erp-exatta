@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ChevronDown, ChevronRight, Edit, MoreHorizontal, Plus, Search, Trash2 } from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
+import Header from "@/components/ui/header"
 import { PlanoContasHeader } from "@/components/plano-contas/plano-contas-header"
 import { PlanoContasTree } from "@/components/plano-contas/plano-contas-tree"
 import { PlanoContasResumo } from "@/components/plano-contas/plano-contas-resumo"
@@ -25,12 +26,13 @@ export default function PlanoContasPage() {
   const [selectedConta, setSelectedConta] = useState<any>(null)
   const [isSubcontaMode, setIsSubcontaMode] = useState(false)
   const [refreshTree, setRefreshTree] = useState(0)
+  const [filtroCard, setFiltroCard] = useState<string>('')
 
-  const handleNovaContaClick = () => {
-    setSelectedConta(null)
-    setIsSubcontaMode(false)
-    setIsModalOpen(true)
-  }
+    const handleNovaContaClick = () => {
+      setSelectedConta(null)
+      setIsSubcontaMode(false)
+      setIsModalOpen(true)
+    }
 
   const handleModalClose = () => {
     setIsModalOpen(false)
@@ -45,16 +47,18 @@ export default function PlanoContasPage() {
     setIsModalOpen(true)
   }
 
-  const handleEditar = (conta: any) => {
-    // Mapeia os dados recebidos para o formato esperado pelo formulário
+  const handleEditar = async (conta: any) => {
+    // Mapeia os dados recebidos para o formato esperado pelos dropdowns (id para Select)
     const contaEdit = {
-      ...conta,
-      tipo: conta.tipo || "",
-      contaPai: conta.conta_pai_id || "",
-      natureza: conta.natureza || "",
+      id: conta.id,
+      codigo: conta.codigo ?? "",
+      nome: conta.nome ?? "",
+      tipo: conta.tipo ? String(conta.tipo).toLowerCase() : "",
+      conta_pai_id: conta.conta_pai_id ?? "",
+      natureza: conta.natureza ? String(conta.natureza).toLowerCase() : "",
       nivel: conta.nivel ? String(conta.nivel) : "",
-      descricao: conta.descricao || "",
-      ativa: conta.ativo !== undefined ? conta.ativo : true,
+      descricao: conta.descricao ?? "",
+      ativo: conta.ativo ?? true,
     }
     setSelectedConta(contaEdit)
     setIsSubcontaMode(false)
@@ -64,6 +68,35 @@ export default function PlanoContasPage() {
   const handleExcluir = (conta: any) => {
     setSelectedConta(conta)
     setIsDeleteModalOpen(true)
+  }
+
+  const handleToggleAtivo = async (conta: any) => {
+    try {
+      const novoStatus = !conta.ativo
+      
+      const { error } = await supabase
+        .from('plano_contas')
+        .update({ ativo: novoStatus })
+        .eq('id', conta.id)
+
+      if (error) {
+        console.error('Erro ao alterar status da conta:', error)
+        alert('Erro ao alterar status da conta. Tente novamente.')
+        return
+      }
+
+      // Atualiza a árvore
+      setRefreshTree((r) => r + 1)
+      
+      console.log(`Conta ${novoStatus ? 'ativada' : 'desativada'} com sucesso`)
+    } catch (error) {
+      console.error('Erro ao alterar status da conta:', error)
+      alert('Erro ao alterar status da conta. Tente novamente.')
+    }
+  }
+
+  const handleCardClick = (filtro: string) => {
+    setFiltroCard(filtro)
   }
 
   const handleEditModalClose = () => {
@@ -111,101 +144,13 @@ export default function PlanoContasPage() {
   const handleExportarClick = () => {
     const dadosPlanoContas = [
       {
-        codigo: "1",
-        nome: "ATIVO",
-        tipo: "Ativo",
-        nivel: "1",
-        contaPai: "",
-        descricao: "Bens e direitos da empresa",
-      },
-      {
-        codigo: "1.1",
-        nome: "ATIVO CIRCULANTE",
-        tipo: "Ativo",
-        nivel: "2",
-        contaPai: "1",
-        descricao: "Bens e direitos realizáveis até 12 meses",
-      },
-      {
-        codigo: "1.1.01",
-        nome: "Caixa e Equivalentes",
-        tipo: "Ativo",
-        nivel: "3",
-        contaPai: "1.1",
-        descricao: "Disponibilidades imediatas",
-      },
-      {
-        codigo: "1.1.01.001",
-        nome: "Caixa",
-        tipo: "Ativo",
-        nivel: "4",
-        contaPai: "1.1.01",
-        descricao: "Dinheiro em espécie",
-      },
-      {
-        codigo: "1.1.01.002",
-        nome: "Bancos Conta Movimento",
-        tipo: "Ativo",
-        nivel: "4",
-        contaPai: "1.1.01",
-        descricao: "Saldo em contas bancárias",
-      },
-      {
-        codigo: "2",
-        nome: "PASSIVO",
-        tipo: "Passivo",
-        nivel: "1",
-        contaPai: "",
-        descricao: "Obrigações da empresa",
-      },
-      {
-        codigo: "2.1",
-        nome: "PASSIVO CIRCULANTE",
-        tipo: "Passivo",
-        nivel: "2",
-        contaPai: "2",
-        descricao: "Obrigações vencíveis até 12 meses",
-      },
-      {
-        codigo: "3",
-        nome: "PATRIMÔNIO LÍQUIDO",
-        tipo: "Patrimônio Líquido",
-        nivel: "1",
-        contaPai: "",
-        descricao: "Recursos próprios da empresa",
-      },
-      {
-        codigo: "4",
-        nome: "RECEITAS",
-        tipo: "Receita",
-        nivel: "1",
-        contaPai: "",
-        descricao: "Entradas de recursos",
-      },
-      {
-        codigo: "4.1",
-        nome: "RECEITAS OPERACIONAIS",
-        tipo: "Receita",
-        nivel: "2",
-        contaPai: "4",
-        descricao: "Receitas da atividade principal",
-      },
-      {
-        codigo: "5",
-        nome: "DESPESAS",
-        tipo: "Despesa",
-        nivel: "1",
-        contaPai: "",
-        descricao: "Saídas de recursos",
-      },
-      {
         codigo: "5.1",
         nome: "DESPESAS OPERACIONAIS",
         tipo: "Despesa",
         nivel: "2",
         contaPai: "5",
-        descricao: "Despesas da atividade principal",
-      },
+        descricao: "Despesas da atividade principal"
+      }
     ]
 
     const headers = ["Código", "Nome", "Tipo", "Nível", "Conta Pai", "Descrição"]
@@ -228,53 +173,62 @@ export default function PlanoContasPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <PlanoContasHeader
-        onNovaConta={handleNovaContaClick}
-        onImportar={handleImportarClick}
-        onExportar={handleExportarClick}
-        onRelatorio={handleRelatorioClick}
-      />
-
-      <main className="container mx-auto px-4 py-6 space-y-6">
-        {/* Resumo do Plano de Contas */}
-        <PlanoContasResumo />
-
-        {/* Árvore do Plano de Contas */}
-        <PlanoContasTree
-          onAdicionarSubconta={handleAdicionarSubconta}
-          onEditar={handleEditar}
-          onExcluir={handleExcluir}
-          refresh={refreshTree}
+    <>
+      <Header />
+      <div className="min-h-screen bg-gray-50">
+        <PlanoContasHeader
+          onNovaConta={handleNovaContaClick}
+          onImportar={handleImportarClick}
+          onExportar={handleExportarClick}
+          onRelatorio={handleRelatorioClick}
         />
-      </main>
 
-      {/* Modal de Nova Conta */}
-      <PlanoContasModal
-        isOpen={isModalOpen}
-        onClose={handleModalClose}
-        conta={isSubcontaMode ? selectedConta : null}
-        isSubconta={isSubcontaMode}
-      />
+        <main className="container mx-auto px-4 py-6 space-y-6">
+          {/* Resumo do Plano de Contas */}
+          <PlanoContasResumo 
+            refresh={refreshTree}
+            onCardClick={handleCardClick}
+            filtroAtivo={filtroCard}
+          />
 
-      <PlanoContasModal
-        isOpen={isEditModalOpen}
-        onClose={handleEditModalClose}
-        conta={selectedConta}
-        isEditing={true}
-      />
+          {/* Árvore do Plano de Contas */}
+          <PlanoContasTree
+            onAdicionarSubconta={handleAdicionarSubconta}
+            onEditar={handleEditar}
+            onExcluir={handleExcluir}
+            onToggleAtivo={handleToggleAtivo}
+            refresh={refreshTree}
+            filtroCard={filtroCard}
+          />
+        </main>
 
-      <PlanoContasDeleteModal
-        isOpen={isDeleteModalOpen}
-        onClose={handleDeleteModalClose}
-        onConfirm={handleConfirmDelete}
-        conta={selectedConta}
-      />
+        {/* Modal de Nova Conta */}
+        <PlanoContasModal
+          isOpen={isModalOpen}
+          onClose={handleModalClose}
+          conta={isSubcontaMode ? selectedConta : null}
+          isSubconta={isSubcontaMode}
+        />
 
-      {/* Modal de Importação */}
-      <PlanoContasImportModal isOpen={isImportModalOpen} onClose={handleImportModalClose} />
+        <PlanoContasModal
+          isOpen={isEditModalOpen}
+          onClose={handleEditModalClose}
+          conta={selectedConta}
+          isEditing={true}
+        />
 
-      <PlanoContasRelatorioModal isOpen={isRelatorioModalOpen} onClose={handleRelatorioModalClose} />
-    </div>
+        <PlanoContasDeleteModal
+          isOpen={isDeleteModalOpen}
+          onClose={handleDeleteModalClose}
+          onConfirm={handleConfirmDelete}
+          conta={selectedConta}
+        />
+
+        {/* Modal de Importação */}
+        <PlanoContasImportModal isOpen={isImportModalOpen} onClose={handleImportModalClose} />
+
+        <PlanoContasRelatorioModal isOpen={isRelatorioModalOpen} onClose={handleRelatorioModalClose} />
+      </div>
+    </>
   )
 }

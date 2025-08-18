@@ -62,15 +62,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userData, setUserData] = useState<UserData | null>(null)
   const [empresaData, setEmpresaData] = useState<EmpresaData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [dataLoaded, setDataLoaded] = useState(false)
 
   const loadUserData = useCallback(
     async (userId: string) => {
-      // Evitar carregar dados se já foram carregados para este usuário
-      if (dataLoaded && userData?.id === userId) {
-        return
-      }
-
       try {
         setLoading(true)
         console.log("Carregando dados do usuário:", userId)
@@ -105,7 +99,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         console.log("Dados da empresa carregados:", empresa)
         setEmpresaData(empresa)
-        setDataLoaded(true)
       } catch (error: any) {
         console.error("Erro ao carregar dados:", error)
         setUserData(null)
@@ -114,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false)
       }
     },
-    [dataLoaded, userData?.id, supabase],
+    [userData?.id, supabase],
   )
 
   useEffect(() => {
@@ -139,25 +132,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(session?.user ?? null)
 
       if (session?.user) {
-        // Reset dataLoaded when user changes
-        setDataLoaded(false)
         await loadUserData(session.user.id)
       } else {
         setUserData(null)
         setEmpresaData(null)
-        setDataLoaded(false)
         setLoading(false)
       }
     })
 
     return () => subscription.unsubscribe()
-  }, []) // Array de dependências vazio para executar apenas uma vez
+  }, [])
 
   const signOut = async () => {
-    await supabase.auth.signOut()
-    setUserData(null)
-    setEmpresaData(null)
-    setDataLoaded(false)
+  await supabase.auth.signOut()
+  setUser(null)
+  setUserData(null)
+  setEmpresaData(null)
   }
 
   return (
