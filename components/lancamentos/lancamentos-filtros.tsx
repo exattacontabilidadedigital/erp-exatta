@@ -1,47 +1,150 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, X } from "lucide-react"
+import { X } from "lucide-react"
+import { supabase } from "@/lib/supabase/client"
+import { useAuth } from "@/contexts/auth-context"
 
-export function LancamentosFiltros() {
-  const [filtros, setFiltros] = useState({
+interface FiltrosData {
+  dataInicio: string
+  dataFim: string
+  tipo: string
+  status: string
+  valorMin: string
+  valorMax: string
+  numeroDocumento: string
+  descricao: string
+  planoContaId: string
+  centroCustoId: string
+  clienteFornecedorId: string
+}
+
+interface PlanoContas {
+  id: string
+  codigo: string
+  nome: string
+}
+
+interface CentroCusto {
+  id: string
+  codigo: string
+  nome: string
+}
+
+interface ClienteFornecedor {
+  id: string
+  nome: string
+  tipo: string
+}
+
+interface LancamentosFiltrosProps {
+  onFilterChange?: (filtros: FiltrosData) => void
+}
+
+export function LancamentosFiltros({ onFilterChange }: LancamentosFiltrosProps) {
+  const { userData } = useAuth()
+  const [filtros, setFiltros] = useState<FiltrosData>({
     dataInicio: "",
     dataFim: "",
-    tipo: "",
-    status: "",
+    tipo: "all",
+    status: "all",
     valorMin: "",
     valorMax: "",
-    clienteFornecedor: "",
-    contaBancaria: "",
-    centroCusto: "",
     numeroDocumento: "",
-    historico: "",
+    descricao: "",
+    planoContaId: "all",
+    centroCustoId: "all",
+    clienteFornecedorId: "all",
   })
+
+  const [planoContas, setPlanoContas] = useState<PlanoContas[]>([])
+  const [centroCustos, setCentroCustos] = useState<CentroCusto[]>([])
+  const [clientesFornecedores, setClientesFornecedores] = useState<ClienteFornecedor[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchOptions()
+  }, [userData?.empresa_id])
+
+  useEffect(() => {
+    if (onFilterChange) {
+      onFilterChange(filtros)
+    }
+  }, [filtros, onFilterChange])
+
+  const fetchOptions = async () => {
+    if (!userData?.empresa_id) {
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    try {
+      // Buscar plano de contas
+      const { data: planos, error: planosError } = await supabase
+        .from('plano_contas')
+        .select('id, codigo, nome')
+        .eq('empresa_id', userData.empresa_id)
+        .eq('ativo', true)
+        .order('codigo')
+
+      if (planosError) {
+        console.error('Erro ao buscar plano de contas:', planosError)
+      }
+
+      // Buscar centros de custo
+      const { data: centros, error: centrosError } = await supabase
+        .from('centro_custos')
+        .select('id, codigo, nome')
+        .eq('empresa_id', userData.empresa_id)
+        .eq('ativo', true)
+        .order('codigo')
+
+      if (centrosError) {
+        console.error('Erro ao buscar centros de custo:', centrosError)
+      }
+
+      // Buscar clientes/fornecedores
+      const { data: clientes, error: clientesError } = await supabase
+        .from('clientes_fornecedores')
+        .select('id, nome, tipo')
+        .eq('empresa_id', userData.empresa_id)
+        .eq('ativo', true)
+        .order('nome')
+
+      if (clientesError) {
+        console.error('Erro ao buscar clientes/fornecedores:', clientesError)
+      }
+
+      setPlanoContas(planos || [])
+      setCentroCustos(centros || [])
+      setClientesFornecedores(clientes || [])
+    } catch (error) {
+      console.error('Erro ao carregar opções dos filtros:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleLimparFiltros = () => {
     setFiltros({
       dataInicio: "",
       dataFim: "",
-      tipo: "",
-      status: "",
+      tipo: "all",
+      status: "all",
       valorMin: "",
       valorMax: "",
-      clienteFornecedor: "",
-      contaBancaria: "",
-      centroCusto: "",
       numeroDocumento: "",
-      historico: "",
+      descricao: "",
+      planoContaId: "all",
+      centroCustoId: "all",
+      clienteFornecedorId: "all",
     })
-  }
-
-  const handleAplicarFiltros = () => {
-    // Implementar lógica de aplicação dos filtros
-    console.log("Filtros aplicados:", filtros)
   }
 
   return (
@@ -49,10 +152,15 @@ export function LancamentosFiltros() {
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
           <span>Filtros de Busca</span>
-          <Button variant="ghost" size="sm" onClick={handleLimparFiltros}>
-            <X className="w-4 h-4 mr-2" />
-            Limpar
-          </Button>
+          <div className="flex items-center gap-2">
+            {loading && (
+              <div className="text-sm text-gray-500">Carregando opções...</div>
+            )}
+            <Button variant="ghost" size="sm" onClick={handleLimparFiltros}>
+              <X className="w-4 h-4 mr-2" />
+              Limpar
+            </Button>
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -83,14 +191,13 @@ export function LancamentosFiltros() {
             <Label>Tipo de Lançamento</Label>
             <Select value={filtros.tipo} onValueChange={(value) => setFiltros({ ...filtros, tipo: value })}>
               <SelectTrigger>
-                <SelectValue placeholder="Selecione o tipo" />
+                <SelectValue placeholder="Todos os tipos" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
                 <SelectItem value="receita">Receita</SelectItem>
                 <SelectItem value="despesa">Despesa</SelectItem>
                 <SelectItem value="transferencia">Transferência</SelectItem>
-                <SelectItem value="pagamento">Pagamento</SelectItem>
-                <SelectItem value="recebimento">Recebimento</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -100,9 +207,10 @@ export function LancamentosFiltros() {
             <Label>Status</Label>
             <Select value={filtros.status} onValueChange={(value) => setFiltros({ ...filtros, status: value })}>
               <SelectTrigger>
-                <SelectValue placeholder="Selecione o status" />
+                <SelectValue placeholder="Todos os status" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
                 <SelectItem value="pendente">Pendente</SelectItem>
                 <SelectItem value="liquidado">Liquidado</SelectItem>
                 <SelectItem value="cancelado">Cancelado</SelectItem>
@@ -110,7 +218,7 @@ export function LancamentosFiltros() {
             </Select>
           </div>
 
-          {/* Valor */}
+          {/* Valor Mínimo */}
           <div className="space-y-2">
             <Label htmlFor="valorMin">Valor Mínimo</Label>
             <Input
@@ -122,6 +230,7 @@ export function LancamentosFiltros() {
             />
           </div>
 
+          {/* Valor Máximo */}
           <div className="space-y-2">
             <Label htmlFor="valorMax">Valor Máximo</Label>
             <Input
@@ -133,38 +242,46 @@ export function LancamentosFiltros() {
             />
           </div>
 
-          {/* Cliente/Fornecedor */}
+          {/* Número do Documento */}
           <div className="space-y-2">
-            <Label>Cliente/Fornecedor</Label>
-            <Select
-              value={filtros.clienteFornecedor}
-              onValueChange={(value) => setFiltros({ ...filtros, clienteFornecedor: value })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="cliente1">João Silva</SelectItem>
-                <SelectItem value="fornecedor1">Fornecedor ABC</SelectItem>
-                <SelectItem value="cliente2">Maria Santos</SelectItem>
-              </SelectContent>
-            </Select>
+            <Label htmlFor="numeroDocumento">Nº Documento</Label>
+            <Input
+              id="numeroDocumento"
+              placeholder="Ex: NF-001"
+              value={filtros.numeroDocumento}
+              onChange={(e) => setFiltros({ ...filtros, numeroDocumento: e.target.value })}
+            />
           </div>
 
-          {/* Conta Bancária */}
+          {/* Descrição */}
           <div className="space-y-2">
-            <Label>Conta Bancária</Label>
-            <Select
-              value={filtros.contaBancaria}
-              onValueChange={(value) => setFiltros({ ...filtros, contaBancaria: value })}
+            <Label htmlFor="descricao">Descrição</Label>
+            <Input
+              id="descricao"
+              placeholder="Buscar na descrição..."
+              value={filtros.descricao}
+              onChange={(e) => setFiltros({ ...filtros, descricao: e.target.value })}
+            />
+          </div>
+
+          {/* Plano de Contas */}
+          <div className="space-y-2">
+            <Label>Plano de Contas</Label>
+            <Select 
+              value={filtros.planoContaId} 
+              onValueChange={(value) => setFiltros({ ...filtros, planoContaId: value })}
+              disabled={loading}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Selecione a conta" />
+                <SelectValue placeholder="Todas as contas" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="conta1">Banco do Brasil - CC 12345-6</SelectItem>
-                <SelectItem value="conta2">Itaú - CC 98765-4</SelectItem>
-                <SelectItem value="conta3">Caixa - Poupança 11111-1</SelectItem>
+                <SelectItem value="all">Todas as contas</SelectItem>
+                {planoContas.map((plano) => (
+                  <SelectItem key={plano.id} value={plano.id}>
+                    {plano.codigo} - {plano.nome}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -172,53 +289,46 @@ export function LancamentosFiltros() {
           {/* Centro de Custo */}
           <div className="space-y-2">
             <Label>Centro de Custo</Label>
-            <Select
-              value={filtros.centroCusto}
-              onValueChange={(value) => setFiltros({ ...filtros, centroCusto: value })}
+            <Select 
+              value={filtros.centroCustoId} 
+              onValueChange={(value) => setFiltros({ ...filtros, centroCustoId: value })}
+              disabled={loading}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Selecione" />
+                <SelectValue placeholder="Todos os centros" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="vendas">Vendas</SelectItem>
-                <SelectItem value="marketing">Marketing</SelectItem>
-                <SelectItem value="administrativo">Administrativo</SelectItem>
-                <SelectItem value="operacional">Operacional</SelectItem>
+                <SelectItem value="all">Todos os centros</SelectItem>
+                {centroCustos.map((centro) => (
+                  <SelectItem key={centro.id} value={centro.id}>
+                    {centro.codigo} - {centro.nome}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
 
-          {/* Número do Documento */}
+          {/* Cliente/Fornecedor */}
           <div className="space-y-2">
-            <Label htmlFor="numeroDocumento">Nº Documento</Label>
-            <Input
-              id="numeroDocumento"
-              placeholder="Ex: NF-001, BOL-123"
-              value={filtros.numeroDocumento}
-              onChange={(e) => setFiltros({ ...filtros, numeroDocumento: e.target.value })}
-            />
+            <Label>Cliente/Fornecedor</Label>
+            <Select 
+              value={filtros.clienteFornecedorId} 
+              onValueChange={(value) => setFiltros({ ...filtros, clienteFornecedorId: value })}
+              disabled={loading}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Todos os clientes/fornecedores" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {clientesFornecedores.map((cliente) => (
+                  <SelectItem key={cliente.id} value={cliente.id}>
+                    {cliente.nome} ({cliente.tipo})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-
-          {/* Histórico */}
-          <div className="space-y-2">
-            <Label htmlFor="historico">Histórico</Label>
-            <Input
-              id="historico"
-              placeholder="Buscar no histórico"
-              value={filtros.historico}
-              onChange={(e) => setFiltros({ ...filtros, historico: e.target.value })}
-            />
-          </div>
-        </div>
-
-        <div className="flex justify-end mt-6 space-x-2">
-          <Button variant="outline" onClick={handleLimparFiltros}>
-            Limpar Filtros
-          </Button>
-          <Button onClick={handleAplicarFiltros}>
-            <Search className="w-4 h-4 mr-2" />
-            Aplicar Filtros
-          </Button>
         </div>
       </CardContent>
     </Card>

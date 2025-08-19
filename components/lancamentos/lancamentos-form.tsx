@@ -14,18 +14,21 @@ import { CalendarIcon, Save, X } from "lucide-react"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { supabase } from "@/lib/supabase/client"
+import { useAuth } from "@/contexts/auth-context"
+import { useToast } from "@/hooks/use-toast"
 
 interface Lancamento {
   id: string
   tipo: string
-  data: Date
-  numeroDocumento: string
-  planoContas: string
-  centroCusto: string
-  valor: string
-  clienteFornecedor: string
-  contaBancaria: string
-  historico: string
+  data_lancamento: Date
+  numero_documento: string
+  plano_conta_id: string
+  centro_custo_id: string
+  valor: number
+  cliente_fornecedor_id: string
+  conta_bancaria_id: string
+  forma_pagamento_id: string
+  descricao: string
   status: string
 }
 
@@ -36,58 +39,219 @@ interface LancamentosFormProps {
 }
 
 export function LancamentosForm({ onSuccess, initialData, isEditing = false }: LancamentosFormProps) {
-  const [date, setDate] = useState<Date | undefined>(initialData?.data)
+  const { userData } = useAuth()
+  const { toast } = useToast()
+  const [date, setDate] = useState<Date | undefined>(initialData?.data_lancamento)
   const [formData, setFormData] = useState({
     tipo: initialData?.tipo || "",
-    numeroDocumento: initialData?.numeroDocumento || "",
-    planoContas: initialData?.planoContas || "",
-    centroCusto: initialData?.centroCusto || "",
-    valor: initialData?.valor || "",
-    clienteFornecedor: initialData?.clienteFornecedor || "",
-    contaBancaria: initialData?.contaBancaria || "",
-    historico: initialData?.historico || "",
+    numero_documento: initialData?.numero_documento || "",
+    plano_conta_id: initialData?.plano_conta_id || "",
+    centro_custo_id: initialData?.centro_custo_id || "",
+    valor: initialData?.valor?.toString() || "",
+    cliente_fornecedor_id: initialData?.cliente_fornecedor_id || "",
+    conta_bancaria_id: initialData?.conta_bancaria_id || "",
+    forma_pagamento_id: initialData?.forma_pagamento_id || "",
+    descricao: initialData?.descricao || "",
     status: initialData?.status || "pendente",
   })
+
+  // Estados para opções dos dropdowns
+  const [planoContas, setPlanoContas] = useState<any[]>([])
+  const [centroCustos, setCentroCustos] = useState<any[]>([])
+  const [contasBancarias, setContasBancarias] = useState<any[]>([])
+  const [clientesFornecedores, setClientesFornecedores] = useState<any[]>([])
+  const [formasPagamento, setFormasPagamento] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (userData?.empresa_id) {
+      fetchOptions()
+    }
+  }, [userData?.empresa_id])
 
   useEffect(() => {
     if (initialData) {
       setFormData({
         tipo: initialData.tipo,
-        numeroDocumento: initialData.numeroDocumento,
-        planoContas: initialData.planoContas,
-        centroCusto: initialData.centroCusto,
-        valor: initialData.valor,
-        clienteFornecedor: initialData.clienteFornecedor,
-        contaBancaria: initialData.contaBancaria,
-        historico: initialData.historico,
+        numero_documento: initialData.numero_documento,
+        plano_conta_id: initialData.plano_conta_id,
+        centro_custo_id: initialData.centro_custo_id,
+        valor: initialData.valor.toString(),
+        cliente_fornecedor_id: initialData.cliente_fornecedor_id,
+        conta_bancaria_id: initialData.conta_bancaria_id,
+        forma_pagamento_id: initialData.forma_pagamento_id,
+        descricao: initialData.descricao,
         status: initialData.status,
       })
-      setDate(initialData.data)
+      setDate(initialData.data_lancamento)
     }
   }, [initialData])
+
+  const fetchOptions = async () => {
+    if (!userData?.empresa_id) {
+      console.log('Usuário não possui empresa_id, pulando busca de opções')
+      setLoading(false)
+      return
+    }
+
+    console.log('Iniciando busca de opções para empresa:', userData.empresa_id)
+    setLoading(true)
+    
+    try {
+      // Buscar plano de contas
+      const { data: planos, error: planosError } = await supabase
+        .from('plano_contas')
+        .select('id, codigo, nome, nivel')
+        .eq('empresa_id', userData.empresa_id)
+        .eq('ativo', true)
+        .order('codigo')
+
+      if (planosError) {
+        console.error('Erro ao buscar plano de contas:', planosError)
+      }
+
+      // Buscar centros de custo
+      const { data: centros, error: centrosError } = await supabase
+        .from('centro_custos')
+        .select('id, codigo, nome')
+        .eq('empresa_id', userData.empresa_id)
+        .eq('ativo', true)
+        .order('codigo')
+
+      if (centrosError) {
+        console.error('Erro ao buscar centros de custo:', centrosError)
+      }
+
+      // Buscar contas bancárias
+      const { data: contas, error: contasError } = await supabase
+        .from('contas_bancarias')
+        .select(`
+          id,
+          agencia,
+          conta,
+          digito,
+          bancos(nome)
+        `)
+        .eq('empresa_id', userData.empresa_id)
+        .eq('ativo', true)
+
+      if (contasError) {
+        console.error('Erro ao buscar contas bancárias:', contasError)
+      }
+
+      // Buscar clientes/fornecedores
+      const { data: clientes, error: clientesError } = await supabase
+        .from('clientes_fornecedores')
+        .select('id, nome, tipo')
+        .eq('empresa_id', userData.empresa_id)
+        .eq('ativo', true)
+        .order('nome')
+
+      if (clientesError) {
+        console.error('Erro ao buscar clientes/fornecedores:', clientesError)
+      }
+
+      // Buscar formas de pagamento
+      const { data: formas, error: formasError } = await supabase
+        .from('formas_pagamento')
+        .select('id, nome')
+        .eq('empresa_id', userData.empresa_id)
+        .eq('ativo', true)
+        .order('nome')
+
+      if (formasError) {
+        console.error('Erro ao buscar formas de pagamento:', formasError)
+      }
+
+      console.log('Dados carregados:', { planos, centros, contas, clientes, formas })
+
+      setPlanoContas(planos || [])
+      setCentroCustos(centros || [])
+      setContasBancarias(contas || [])
+      setClientesFornecedores(clientes || [])
+      setFormasPagamento(formas || [])
+    } catch (error) {
+      console.error('Erro ao carregar opções:', error)
+      // Definir arrays vazios em caso de erro para não quebrar a interface
+      setPlanoContas([])
+      setCentroCustos([])
+      setContasBancarias([])
+      setClientesFornecedores([])
+      setFormasPagamento([])
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!date) {
-      alert("Selecione a data do lançamento.")
+      toast({
+        title: "Erro",
+        description: "Selecione a data do lançamento.",
+        variant: "destructive"
+      })
       return
     }
-    // Monta o objeto para inserir
-    const novoLancamento = {
-      ...formData,
-      data: date.toISOString(),
-    }
-    // Insere no Supabase
-    const { error } = await supabase.from("lancamentos").insert([novoLancamento])
-    if (error) {
-      alert("Erro ao salvar lançamento: " + error.message)
+    if (!userData?.empresa_id) {
+      toast({
+        title: "Erro",
+        description: "Empresa não identificada.",
+        variant: "destructive"
+      })
       return
     }
-    if (onSuccess) {
-      onSuccess()
+
+    try {
+      const lancamentoData = {
+        tipo: formData.tipo,
+        numero_documento: formData.numero_documento,
+        data_lancamento: date.toISOString().split('T')[0],
+        descricao: formData.descricao,
+        valor: parseFloat(formData.valor),
+        plano_conta_id: formData.plano_conta_id,
+        centro_custo_id: formData.centro_custo_id,
+        conta_bancaria_id: formData.conta_bancaria_id,
+        cliente_fornecedor_id: formData.cliente_fornecedor_id === "none" ? null : formData.cliente_fornecedor_id || null,
+        forma_pagamento_id: formData.forma_pagamento_id === "none" ? null : formData.forma_pagamento_id || null,
+        empresa_id: userData.empresa_id,
+        usuario_id: userData.id,
+        status: formData.status,
+      }
+
+      let error
+      if (isEditing && initialData?.id) {
+        ({ error } = await supabase
+          .from("lancamentos")
+          .update(lancamentoData)
+          .eq("id", initialData.id))
+      } else {
+        ({ error } = await supabase
+          .from("lancamentos")
+          .insert([lancamentoData]))
+      }
+
+      if (error) throw error
+
+      toast({
+        title: "Sucesso!",
+        description: isEditing ? "Lançamento atualizado com sucesso!" : "Lançamento criado com sucesso!",
+        variant: "default"
+      })
+      
+      if (onSuccess) {
+        onSuccess()
+      }
+      if (!isEditing) {
+        handleClear()
+      }
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: `Erro ao salvar lançamento: ${error.message}`,
+        variant: "destructive"
+      })
     }
-    // Limpa o formulário após salvar
-    handleClear()
   }
 
   const handleInputChange = (field: string, value: string) => {
@@ -97,16 +261,25 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
   const handleClear = () => {
     setFormData({
       tipo: "",
-      numeroDocumento: "",
-      planoContas: "",
-      centroCusto: "",
+      numero_documento: "",
+      plano_conta_id: "",
+      centro_custo_id: "",
       valor: "",
-      clienteFornecedor: "",
-      contaBancaria: "",
-      historico: "",
+      cliente_fornecedor_id: "",
+      conta_bancaria_id: "",
+      forma_pagamento_id: "",
+      descricao: "",
       status: "pendente",
     })
     setDate(undefined)
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-4 p-6">
+        <div className="text-center">Carregando formulário...</div>
+      </div>
+    )
   }
 
   return (
@@ -147,46 +320,45 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
 
         {/* Número do Documento */}
         <div className="space-y-2">
-          <Label htmlFor="numeroDocumento">Número do Documento *</Label>
+          <Label htmlFor="numero_documento">Número do Documento *</Label>
           <Input
-            id="numeroDocumento"
+            id="numero_documento"
             placeholder="NF, Boleto, Recibo..."
-            value={formData.numeroDocumento}
-            onChange={(e) => handleInputChange("numeroDocumento", e.target.value)}
+            value={formData.numero_documento}
+            onChange={(e) => handleInputChange("numero_documento", e.target.value)}
           />
         </div>
 
         {/* Plano de Contas */}
         <div className="space-y-2">
-          <Label htmlFor="planoContas">Plano de Contas *</Label>
-          <Select value={formData.planoContas} onValueChange={(value) => handleInputChange("planoContas", value)}>
+          <Label htmlFor="plano_conta_id">Plano de Contas *</Label>
+          <Select value={formData.plano_conta_id} onValueChange={(value) => handleInputChange("plano_conta_id", value)}>
             <SelectTrigger>
               <SelectValue placeholder="Selecione a conta" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="1.1.01">1.1.01 - Caixa</SelectItem>
-              <SelectItem value="1.1.02">1.1.02 - Bancos</SelectItem>
-              <SelectItem value="1.2.01">1.2.01 - Contas a Receber</SelectItem>
-              <SelectItem value="2.1.01">2.1.01 - Fornecedores</SelectItem>
-              <SelectItem value="3.1.01">3.1.01 - Receita de Vendas</SelectItem>
-              <SelectItem value="4.1.01">4.1.01 - Despesas Operacionais</SelectItem>
+              {planoContas.map((conta) => (
+                <SelectItem key={conta.id} value={conta.id}>
+                  {conta.codigo} - {conta.nome}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
 
         {/* Centro de Custo */}
         <div className="space-y-2">
-          <Label htmlFor="centroCusto">Centro de Custo *</Label>
-          <Select value={formData.centroCusto} onValueChange={(value) => handleInputChange("centroCusto", value)}>
+          <Label htmlFor="centro_custo_id">Centro de Custo *</Label>
+          <Select value={formData.centro_custo_id} onValueChange={(value) => handleInputChange("centro_custo_id", value)}>
             <SelectTrigger>
               <SelectValue placeholder="Selecione o centro de custo" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="001">001 - Administrativo</SelectItem>
-              <SelectItem value="002">002 - Vendas</SelectItem>
-              <SelectItem value="003">003 - Produção</SelectItem>
-              <SelectItem value="004">004 - Marketing</SelectItem>
-              <SelectItem value="005">005 - Financeiro</SelectItem>
+              {centroCustos.map((centro) => (
+                <SelectItem key={centro.id} value={centro.id}>
+                  {centro.codigo} - {centro.nome}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -206,47 +378,68 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
 
         {/* Cliente/Fornecedor */}
         <div className="space-y-2">
-          <Label htmlFor="clienteFornecedor">Cliente/Fornecedor *</Label>
+          <Label htmlFor="cliente_fornecedor_id">Cliente/Fornecedor</Label>
           <Select
-            value={formData.clienteFornecedor}
-            onValueChange={(value) => handleInputChange("clienteFornecedor", value)}
+            value={formData.cliente_fornecedor_id}
+            onValueChange={(value) => handleInputChange("cliente_fornecedor_id", value)}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Selecione cliente/fornecedor" />
+              <SelectValue placeholder="Selecione cliente/fornecedor (opcional)" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="cliente1">Empresa ABC Ltda</SelectItem>
-              <SelectItem value="cliente2">Cliente DEF</SelectItem>
-              <SelectItem value="fornecedor1">Fornecedor XYZ</SelectItem>
-              <SelectItem value="fornecedor2">Fornecedor 123</SelectItem>
+              <SelectItem value="none">Nenhum</SelectItem>
+              {clientesFornecedores.map((cliente) => (
+                <SelectItem key={cliente.id} value={cliente.id}>
+                  {cliente.nome} ({cliente.tipo})
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
 
         {/* Conta Bancária */}
         <div className="space-y-2">
-          <Label htmlFor="contaBancaria">Conta Bancária *</Label>
-          <Select value={formData.contaBancaria} onValueChange={(value) => handleInputChange("contaBancaria", value)}>
+          <Label htmlFor="conta_bancaria_id">Conta Bancária *</Label>
+          <Select value={formData.conta_bancaria_id} onValueChange={(value) => handleInputChange("conta_bancaria_id", value)}>
             <SelectTrigger>
               <SelectValue placeholder="Selecione a conta" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="bb001">Banco do Brasil - CC 12345-6</SelectItem>
-              <SelectItem value="itau001">Itaú - CC 67890-1</SelectItem>
-              <SelectItem value="caixa001">Caixa Econômica - CC 11111-2</SelectItem>
-              <SelectItem value="santander001">Santander - CC 22222-3</SelectItem>
+              {contasBancarias.map((conta) => (
+                <SelectItem key={conta.id} value={conta.id}>
+                  {(conta as any).bancos?.nome} - Ag: {conta.agencia} | Cc: {conta.conta}{conta.digito ? `-${conta.digito}` : ''}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
 
-        {/* Histórico */}
+        {/* Forma de Pagamento */}
         <div className="space-y-2">
-          <Label htmlFor="historico">Histórico/Descrição *</Label>
+          <Label htmlFor="forma_pagamento_id">Forma de Pagamento</Label>
+          <Select value={formData.forma_pagamento_id} onValueChange={(value) => handleInputChange("forma_pagamento_id", value)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecione a forma de pagamento (opcional)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Nenhuma</SelectItem>
+              {formasPagamento.map((forma) => (
+                <SelectItem key={forma.id} value={forma.id}>
+                  {forma.nome}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Descrição */}
+        <div className="space-y-2">
+          <Label htmlFor="descricao">Descrição *</Label>
           <Textarea
-            id="historico"
+            id="descricao"
             placeholder="Descrição detalhada do lançamento..."
-            value={formData.historico}
-            onChange={(e) => handleInputChange("historico", e.target.value)}
+            value={formData.descricao}
+            onChange={(e) => handleInputChange("descricao", e.target.value)}
             rows={3}
           />
         </div>
