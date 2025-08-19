@@ -159,9 +159,20 @@ export function CentroCustosList({ onVisualizar, onEditar, onExcluir, onRelatori
                 <TableRow key={centro.id}>
                   <TableCell>
                     <div>
-                      <div className="font-medium">{centro.codigo} - {centro.nome}</div>
+                      <div className={`${
+                        centro.aceita_lancamentos === false 
+                          ? 'font-bold text-gray-800' 
+                          : 'font-medium'
+                      }`}>
+                        {centro.codigo} - {centro.nome}
+                      </div>
                       <div className="text-sm text-gray-500">{centro.departamento}</div>
                       <div className="text-xs text-gray-400">{centro.descricao}</div>
+                      {centro.aceita_lancamentos === false && (
+                        <div className="text-xs text-red-600 font-medium mt-1">
+                          Centro organizador
+                        </div>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>{getTipoBadge(centro.tipo)}</TableCell>

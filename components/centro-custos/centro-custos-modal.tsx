@@ -6,20 +6,32 @@ interface CentroCustosModalProps {
   onClose: () => void
   isEditing?: boolean
   centroCusto?: any
+  centroPai?: any
 }
 
-export function CentroCustosModal({ isOpen, onClose, isEditing = false, centroCusto }: CentroCustosModalProps) {
+export function CentroCustosModal({ isOpen, onClose, isEditing = false, centroCusto, centroPai }: CentroCustosModalProps) {
   const handleSuccess = () => {
     onClose()
+  }
+
+  const getTitle = () => {
+    if (isEditing) return "Editar Centro de Custos"
+    if (centroPai) return `Novo Subcentro de "${centroPai.nome}"`
+    return "Novo Centro de Custos"
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEditing ? "Editar Centro de Custos" : "Novo Centro de Custos"}</DialogTitle>
+          <DialogTitle>{getTitle()}</DialogTitle>
         </DialogHeader>
-        <CentroCustosForm onSuccess={handleSuccess} initialData={centroCusto} isEditing={isEditing} />
+        <CentroCustosForm 
+          onSuccess={handleSuccess} 
+          initialData={centroCusto} 
+          isEditing={isEditing} 
+          centroPai={centroPai}
+        />
       </DialogContent>
     </Dialog>
   )

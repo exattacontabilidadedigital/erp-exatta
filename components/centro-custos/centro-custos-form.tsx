@@ -16,14 +16,16 @@ interface CentroCustosFormProps {
   onSuccess?: () => void
   initialData?: any
   isEditing?: boolean
+  centroPai?: any
 }
 
-export function CentroCustosForm({ onSuccess, initialData, isEditing = false }: CentroCustosFormProps) {
+export function CentroCustosForm({ onSuccess, initialData, isEditing = false, centroPai }: CentroCustosFormProps) {
     const { userData } = require("@/contexts/auth-context").useAuth();
   // Busca tipos cadastrados na tabela tipos_centro_custos
   const [tipoOptions, setTipoOptions] = useState<any[]>([]);
   const [responsavelOptions, setResponsavelOptions] = useState<any[]>([]);
   const [departamentoOptions, setDepartamentoOptions] = useState<any[]>([]);
+  const [centroPaiOptions, setCentroPaiOptions] = useState<any[]>([]);
 
   useEffect(() => {
     async function fetchOptions() {
@@ -34,18 +36,36 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false }: 
       setResponsavelOptions(responsaveis || []);
       const { data: departamentos } = await supabase.from("departamentos").select("id, nome").eq("empresa_id", userData.empresa_id).eq("ativo", true);
       setDepartamentoOptions(departamentos || []);
+      
+      // Busca centros de custo para usar como pai (excluindo o próprio se estiver editando)
+      let query = supabase
+        .from("centro_custos")
+        .select("id, codigo, nome, nivel")
+        .eq("empresa_id", userData.empresa_id)
+        .eq("ativo", true)
+        .order("codigo");
+      
+      if (isEditing && initialData?.id) {
+        query = query.neq("id", initialData.id);
+      }
+      
+      const { data: centrosPai } = await query;
+      setCentroPaiOptions(centrosPai || []);
     }
     fetchOptions();
-  }, [userData?.empresa_id]);
+  }, [userData?.empresa_id, isEditing, initialData?.id]);
   const [formData, setFormData] = useState({
     codigo: "",
     nome: "",
     tipo: "",
+    nivel: 1,
+    centroPai: "__none__",
     responsavel: "",
     departamento: "",
     orcamentoMensal: "",
     descricao: "",
     ativo: true,
+    aceitaLancamentos: true,
   });
   useEffect(() => {
     if (isEditing && initialData) {
@@ -53,17 +73,44 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false }: 
         codigo: initialData.codigo ?? "",
         nome: initialData.nome ?? "",
         tipo: initialData.tipo ?? "",
+        nivel: initialData.nivel ?? 1,
+        centroPai: initialData.centro_pai_id ?? "__none__",
         responsavel: initialData.responsavel ?? (responsavelOptions[0]?.id ?? ""),
         departamento: initialData.departamento ?? (departamentoOptions[0]?.id ?? ""),
-        orcamentoMensal: initialData.orcamentoMensal ?? "",
+        orcamentoMensal: initialData.orcamento_mensal ?? "",
         descricao: initialData.descricao ?? "",
         ativo: typeof initialData.ativo === "boolean" ? initialData.ativo : true,
+        aceitaLancamentos: typeof initialData.aceita_lancamentos === "boolean" ? initialData.aceita_lancamentos : true,
+      });
+    } else if (centroPai) {
+      // Se é um subcentro, define o centro pai e o nível
+      setFormData({
+        codigo: "",
+        nome: "",
+        tipo: "",
+        nivel: centroPai.nivel + 1,
+        centroPai: centroPai.id,
+        responsavel: "",
+        departamento: "",
+        orcamentoMensal: "",
+        descricao: "",
+        ativo: true,
+        aceitaLancamentos: true, // Subcentros por padrão aceitam lançamentos
       });
     }
-  }, [isEditing, initialData, responsavelOptions, departamentoOptions]);
+  }, [isEditing, initialData, centroPai, responsavelOptions, departamentoOptions]);
 
   function handleInputChange(field: string, value: any) {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormData((prev) => {
+      const newData = { ...prev, [field]: value };
+      
+      // Se o campo alterado é aceitaLancamentos e foi desmarcado, limpa o orçamento
+      if (field === 'aceitaLancamentos' && !value) {
+        newData.orcamentoMensal = "";
+      }
+      
+      return newData;
+    });
   }
 
   function limparFormulario() {
@@ -71,11 +118,14 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false }: 
       codigo: "",
       nome: "",
       tipo: "",
+      nivel: 1,
+      centroPai: "__none__",
       responsavel: "",
       departamento: "",
       orcamentoMensal: "",
       descricao: "",
       ativo: true,
+      aceitaLancamentos: true,
     });
   }
 
@@ -89,40 +139,72 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false }: 
     }
     // Garante que orcamento_mensal seja número ou null
     const orcamentoValue = formData.orcamentoMensal === "" ? null : Number(formData.orcamentoMensal);
+    
+    // Se não aceita lançamentos, orçamento deve ser zero/null
+    const orcamentoFinal = formData.aceitaLancamentos ? orcamentoValue : null;
+    
+    // Define o nível baseado no centro pai selecionado
+    let nivel = 1;
+    let centroPaiId = null;
+    
+    if (formData.centroPai && formData.centroPai !== "__none__") {
+      centroPaiId = formData.centroPai;
+      const centroPai = centroPaiOptions.find(c => c.id === formData.centroPai);
+      if (centroPai) {
+        nivel = (centroPai.nivel || 1) + 1;
+      }
+    }
+
     if (isEditing && initialData?.id) {
       // Atualiza centro de custos existente
+      const updateData: any = {
+        codigo: formData.codigo,
+        nome: formData.nome,
+        tipo: formData.tipo,
+        nivel: nivel,
+        centro_pai_id: centroPaiId,
+        responsavel: formData.responsavel,
+        departamento: formData.departamento,
+        orcamento_mensal: orcamentoFinal,
+        descricao: formData.descricao,
+        ativo: formData.ativo,
+        empresa_id: userData?.empresa_id ?? null,
+      };
+      
+      // Só inclui aceita_lancamentos se o campo foi definido (para evitar erro se campo não existe)
+      if (typeof formData.aceitaLancamentos !== 'undefined') {
+        updateData.aceita_lancamentos = formData.aceitaLancamentos;
+      }
+      
       ({ error } = await import("@/lib/supabase/client").then(({ supabase }) =>
-        supabase.from("centro_custos").update({
-          codigo: formData.codigo,
-          nome: formData.nome,
-          tipo: formData.tipo,
-          responsavel: formData.responsavel,
-          departamento: formData.departamento,
-          orcamento_mensal: orcamentoValue,
-          descricao: formData.descricao,
-          ativo: formData.ativo,
-          empresa_id: userData?.empresa_id ?? null,
-        }).eq("id", initialData.id)
+        supabase.from("centro_custos").update(updateData).eq("id", initialData.id)
       ));
       if (!error) {
         toast.success("Centro de custo editado com sucesso!");
       }
     } else {
       // Insere novo centro de custos
+      const insertData: any = {
+        codigo: formData.codigo,
+        nome: formData.nome,
+        tipo: formData.tipo,
+        nivel: nivel,
+        centro_pai_id: centroPaiId,
+        responsavel: formData.responsavel,
+        departamento: formData.departamento,
+        orcamento_mensal: orcamentoFinal,
+        descricao: formData.descricao,
+        ativo: formData.ativo,
+        empresa_id: userData?.empresa_id ?? null,
+      };
+      
+      // Só inclui aceita_lancamentos se o campo foi definido (para evitar erro se campo não existe)
+      if (typeof formData.aceitaLancamentos !== 'undefined') {
+        insertData.aceita_lancamentos = formData.aceitaLancamentos;
+      }
+      
       ({ error } = await import("@/lib/supabase/client").then(({ supabase }) =>
-        supabase.from("centro_custos").insert([
-          {
-            codigo: formData.codigo,
-            nome: formData.nome,
-            tipo: formData.tipo,
-            responsavel: formData.responsavel,
-            departamento: formData.departamento,
-            orcamento_mensal: orcamentoValue,
-            descricao: formData.descricao,
-            ativo: formData.ativo,
-            empresa_id: userData?.empresa_id ?? null,
-          }
-        ])
+        supabase.from("centro_custos").insert([insertData])
       ));
     }
     if (error) {
@@ -213,6 +295,25 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false }: 
         </Select>
       </div>
       <div className="space-y-2">
+        <Label htmlFor="centroPai">Centro de Custo Pai (Opcional)</Label>
+        <Select
+          value={formData.centroPai}
+          onValueChange={(value) => handleInputChange("centroPai", value)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Selecione o centro pai (deixe em branco para nível 1)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">Nenhum (Nível 1)</SelectItem>
+            {centroPaiOptions.map((centro: any) => (
+              <SelectItem key={centro.id} value={centro.id}>
+                {"  ".repeat(centro.nivel - 1)}{centro.codigo} - {centro.nome}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
         <Label htmlFor="orcamentoMensal">Orçamento Mensal</Label>
         <Input
           id="orcamentoMensal"
@@ -221,7 +322,14 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false }: 
           placeholder="0,00"
           value={formData.orcamentoMensal}
           onChange={(e) => handleInputChange("orcamentoMensal", e.target.value)}
+          disabled={!formData.aceitaLancamentos}
+          className={!formData.aceitaLancamentos ? 'bg-gray-100 text-gray-500' : ''}
         />
+        {!formData.aceitaLancamentos && (
+          <p className="text-sm text-amber-600">
+            Centros que não aceitam lançamentos não precisam de orçamento
+          </p>
+        )}
       </div>
       <div className="space-y-2">
         <Label htmlFor="descricao">Descrição</Label>
@@ -240,6 +348,17 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false }: 
           onCheckedChange={(checked) => handleInputChange("ativo", checked)}
         />
         <Label htmlFor="ativo">Centro Ativo</Label>
+      </div>
+      <div className="flex items-center space-x-2">
+        <Switch
+          id="aceitaLancamentos"
+          checked={formData.aceitaLancamentos}
+          onCheckedChange={(checked) => handleInputChange("aceitaLancamentos", checked)}
+        />
+        <Label htmlFor="aceitaLancamentos">Aceita Lançamentos</Label>
+        <span className="text-sm text-gray-500 ml-2">
+          (Define se este centro pode receber lançamentos contábeis diretos)
+        </span>
       </div>
       <div className="flex space-x-2 pt-4">
         <Button type="submit" className="flex-1">
