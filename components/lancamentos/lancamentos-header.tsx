@@ -4,16 +4,21 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft, Download, Filter, Plus, Upload } from "lucide-react"
 import Link from "next/link"
 import { LancamentosColumnsConfig, type ColumnConfig } from "./lancamentos-columns-config"
+import { ExportDropdown } from "./export-dropdown"
 
 interface LancamentosHeaderProps {
   onNovoLancamento?: () => void
   onToggleFiltros?: () => void
   onImportar?: () => void
   onExportar?: () => void
+  onExportCSV?: () => void
+  onExportExcel?: () => void
+  onExportJSON?: () => void
   showFiltros?: boolean
   filtrosAtivos?: boolean
   columns?: ColumnConfig[]
   onColumnsChange?: (columns: ColumnConfig[]) => void
+  totalLancamentos?: number
 }
 
 export function LancamentosHeader({
@@ -21,10 +26,14 @@ export function LancamentosHeader({
   onToggleFiltros,
   onImportar,
   onExportar,
+  onExportCSV,
+  onExportExcel,
+  onExportJSON,
   showFiltros = false,
   filtrosAtivos = false,
   columns,
   onColumnsChange,
+  totalLancamentos = 0,
 }: LancamentosHeaderProps) {
   return (
     <header className="bg-white border-b border-gray-200 shadow-sm">
@@ -51,10 +60,15 @@ export function LancamentosHeader({
               <Upload className="w-4 h-4" />
             </Button>
             
-            <Button variant="outline" size="sm" onClick={onExportar} className="hidden sm:flex">
-              <Download className="w-4 h-4 mr-2" />
-              Exportar
-            </Button>
+            {/* Dropdown de exportação melhorado */}
+            <ExportDropdown
+              onExportCSV={onExportCSV || onExportar}
+              onExportExcel={onExportExcel || onExportar}
+              onExportJSON={onExportJSON || onExportar}
+              disabled={totalLancamentos === 0}
+            />
+            
+            {/* Botão simples para mobile */}
             <Button variant="outline" size="sm" onClick={onExportar} className="sm:hidden">
               <Download className="w-4 h-4" />
             </Button>

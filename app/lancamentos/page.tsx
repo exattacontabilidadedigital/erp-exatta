@@ -1,17 +1,57 @@
 "use client"
 
-import { useState, useCallback, useMemo } from "react"
+import { useState, useCallback, useMemo, Suspense, lazy } from "react"
 import { LancamentosHeader } from "@/components/lancamentos/lancamentos-header"
-import { LancamentosList } from "@/components/lancamentos/lancamentos-list"
-import { LancamentosModal } from "@/components/lancamentos/lancamentos-modal"
-import { LancamentosFiltros } from "@/components/lancamentos/lancamentos-filtros"
-import { LancamentosImportModal } from "@/components/lancamentos/lancamentos-import-modal"
-import { LancamentosViewModal } from "@/components/lancamentos/lancamentos-view-modal"
-import { LancamentosDeleteModal } from "@/components/lancamentos/lancamentos-delete-modal"
 import { useColumnsConfig } from "@/hooks/use-columns-config"
 import Header from "@/components/ui/header"
 import { supabase } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Card, CardContent } from "@/components/ui/card"
+import { DataExporter, LancamentosExportColumns } from "@/lib/export-utils"
+
+// Lazy loading dos componentes pesados
+const LancamentosList = lazy(() => import("@/components/lancamentos/lancamentos-list").then(m => ({ default: m.LancamentosList })))
+const LancamentosModal = lazy(() => import("@/components/lancamentos/lancamentos-modal").then(m => ({ default: m.LancamentosModal })))
+const LancamentosFiltros = lazy(() => import("@/components/lancamentos/lancamentos-filtros").then(m => ({ default: m.LancamentosFiltros })))
+const LancamentosImportModal = lazy(() => import("@/components/lancamentos/lancamentos-import-modal").then(m => ({ default: m.LancamentosImportModal })))
+const LancamentosViewModal = lazy(() => import("@/components/lancamentos/lancamentos-view-modal").then(m => ({ default: m.LancamentosViewModal })))
+const LancamentosDeleteModal = lazy(() => import("@/components/lancamentos/lancamentos-delete-modal").then(m => ({ default: m.LancamentosDeleteModal })))
+
+// Loading skeletons
+const ListSkeleton = () => (
+  <Card>
+    <CardContent className="p-6">
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-full" />
+        {[...Array(8)].map((_, i) => (
+          <div key={i} className="flex justify-between items-center">
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+            <Skeleton className="h-4 w-20" />
+          </div>
+        ))}
+      </div>
+    </CardContent>
+  </Card>
+)
+
+const FiltrosSkeleton = () => (
+  <Card>
+    <CardContent className="p-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ))}
+      </div>
+    </CardContent>
+  </Card>
+)
 
 export default function LancamentosPage() {
   const { toast } = useToast()
@@ -150,6 +190,10 @@ export default function LancamentosPage() {
   }
 
   const handleExportar = () => {
+    handleExportCSV()
+  }
+
+  const handleExportCSV = () => {
     if (lancamentosData.length === 0) {
       toast({
         title: "Aviso",
@@ -159,46 +203,89 @@ export default function LancamentosPage() {
       return
     }
 
-    const csvHeader = [
-      "Data",
-      "Tipo",
-      "Nº Documento",
-      "Plano de Contas",
-      "Centro de Custo",
-      "Cliente/Fornecedor",
-      "Conta Bancária",
-      "Valor",
-      "Descrição",
-      "Status",
-    ].join(",")
+    try {
+      DataExporter.exportToCSV(lancamentosData, {
+        filename: 'lancamentos_contabeis',
+        columns: LancamentosExportColumns,
+        includeTimestamp: true
+      })
 
-    const csvContent = [
-      csvHeader,
-      ...lancamentosData.map((lancamento) =>
-        [
-          lancamento.data_lancamento ? new Date(lancamento.data_lancamento).toLocaleDateString('pt-BR') : '',
-          lancamento.tipo,
-          `"${lancamento.numero_documento || ''}"`,
-          `"${lancamento.plano_conta_nome || ''}"`,
-          `"${lancamento.centro_custo_nome || ''}"`,
-          `"${lancamento.cliente_fornecedor_nome || ''}"`,
-          `"${lancamento.conta_bancaria_nome || ''}"`,
-          Number.parseFloat(lancamento.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
-          `"${lancamento.descricao || ''}"`,
-          lancamento.status,
-        ].join(",")
-      ),
-    ].join("\\n")
+      toast({
+        title: "Sucesso",
+        description: `${lancamentosData.length} lançamentos exportados em CSV`,
+        variant: "default"
+      })
+    } catch (error) {
+      console.error('Erro ao exportar lançamentos:', error)
+      toast({
+        title: "Erro",
+        description: "Erro ao exportar lançamentos. Tente novamente.",
+        variant: "destructive"
+      })
+    }
+  }
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-    const link = document.createElement("a")
-    const url = URL.createObjectURL(blob)
-    link.setAttribute("href", url)
-    link.setAttribute("download", `lancamentos_${new Date().toISOString().split('T')[0]}.csv`)
-    link.style.visibility = "hidden"
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+  const handleExportExcel = () => {
+    if (lancamentosData.length === 0) {
+      toast({
+        title: "Aviso",
+        description: "Não há lançamentos para exportar",
+        variant: "default"
+      })
+      return
+    }
+
+    try {
+      DataExporter.exportToExcel(lancamentosData, {
+        filename: 'lancamentos_contabeis',
+        columns: LancamentosExportColumns,
+        includeTimestamp: true
+      })
+
+      toast({
+        title: "Sucesso",
+        description: `${lancamentosData.length} lançamentos exportados em Excel`,
+        variant: "default"
+      })
+    } catch (error) {
+      console.error('Erro ao exportar lançamentos:', error)
+      toast({
+        title: "Erro",
+        description: "Erro ao exportar lançamentos. Tente novamente.",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleExportJSON = () => {
+    if (lancamentosData.length === 0) {
+      toast({
+        title: "Aviso",
+        description: "Não há lançamentos para exportar",
+        variant: "default"
+      })
+      return
+    }
+
+    try {
+      DataExporter.exportToJSON(lancamentosData, {
+        filename: 'lancamentos_contabeis',
+        includeTimestamp: true
+      })
+
+      toast({
+        title: "Sucesso",
+        description: `${lancamentosData.length} lançamentos exportados em JSON`,
+        variant: "default"
+      })
+    } catch (error) {
+      console.error('Erro ao exportar lançamentos:', error)
+      toast({
+        title: "Erro",
+        description: "Erro ao exportar lançamentos. Tente novamente.",
+        variant: "destructive"
+      })
+    }
   }
 
   return (
@@ -210,52 +297,78 @@ export default function LancamentosPage() {
           onToggleFiltros={handleToggleFiltros}
           onImportar={handleImportar}
           onExportar={handleExportar}
+          onExportCSV={handleExportCSV}
+          onExportExcel={handleExportExcel}
+          onExportJSON={handleExportJSON}
           showFiltros={showFiltros}
           filtrosAtivos={filtrosAtivos}
           columns={columns}
           onColumnsChange={updateColumns}
+          totalLancamentos={lancamentosData.length}
         />
 
         <main className="container mx-auto px-4 py-6">
           {showFiltros && (
             <div className="mb-6">
-              <LancamentosFiltros onFilterChange={handleFilterChange} />
+              <Suspense fallback={<FiltrosSkeleton />}>
+                <LancamentosFiltros onFilterChange={handleFilterChange} />
+              </Suspense>
             </div>
           )}
 
-          <LancamentosList 
-            onVisualizar={handleVisualizar} 
-            onEditar={handleEditar} 
-            onExcluir={handleExcluir} 
-            refresh={refreshLancamentos}
-            showContasFilter={true}
-            onDataChange={handleLancamentosDataChange}
-            filtros={filtrosData}
-            columns={columns}
-            periodFilter={periodFilter}
-            onPeriodChange={handlePeriodChange}
-          />
+          <Suspense fallback={<ListSkeleton />}>
+            <LancamentosList 
+              onVisualizar={handleVisualizar} 
+              onEditar={handleEditar} 
+              onExcluir={handleExcluir} 
+              refresh={refreshLancamentos}
+              showContasFilter={true}
+              onDataChange={handleLancamentosDataChange}
+              filtros={filtrosData}
+              columns={columns}
+              periodFilter={periodFilter}
+              onPeriodChange={handlePeriodChange}
+            />
+          </Suspense>
         </main>
 
-        <LancamentosModal isOpen={isModalOpen} onClose={handleCloseModal} />
-        <LancamentosModal
-          isOpen={isEditModalOpen}
-          onClose={handleCloseEditModal}
-          lancamento={selectedLancamento}
-          isEditing={true}
-        />
-        <LancamentosImportModal 
-          isOpen={isImportModalOpen} 
-          onClose={handleCloseImportModal} 
-          onImportComplete={handleImportComplete}
-        />
-        <LancamentosViewModal isOpen={isViewModalOpen} onClose={handleCloseViewModal} lancamento={selectedLancamento} />
-        <LancamentosDeleteModal
-          isOpen={isDeleteModalOpen}
-          onClose={handleCloseDeleteModal}
-          onConfirm={handleConfirmDelete}
-          lancamento={selectedLancamento}
-        />
+        <Suspense fallback={<div />}>
+          <LancamentosModal isOpen={isModalOpen} onClose={handleCloseModal} />
+        </Suspense>
+        
+        <Suspense fallback={<div />}>
+          <LancamentosModal
+            isOpen={isEditModalOpen}
+            onClose={handleCloseEditModal}
+            lancamento={selectedLancamento}
+            isEditing={true}
+          />
+        </Suspense>
+        
+        <Suspense fallback={<div />}>
+          <LancamentosImportModal 
+            isOpen={isImportModalOpen} 
+            onClose={handleCloseImportModal} 
+            onImportComplete={handleImportComplete}
+          />
+        </Suspense>
+        
+        <Suspense fallback={<div />}>
+          <LancamentosViewModal 
+            isOpen={isViewModalOpen} 
+            onClose={handleCloseViewModal} 
+            lancamento={selectedLancamento} 
+          />
+        </Suspense>
+        
+        <Suspense fallback={<div />}>
+          <LancamentosDeleteModal
+            isOpen={isDeleteModalOpen}
+            onClose={handleCloseDeleteModal}
+            onConfirm={handleConfirmDelete}
+            lancamento={selectedLancamento}
+          />
+        </Suspense>
       </div>
     </>
   )
