@@ -7,12 +7,15 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ContaBancariaSelect } from "@/components/ui/conta-bancaria-select"
+import { PlanoContaSelect } from "@/components/ui/plano-conta-select"
 import { Edit, MoreHorizontal, Search, Trash2, Eye } from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/contexts/auth-context"
+import { adjustToLocalTimezone, parseDateFromDatabase } from "@/lib/date-utils"
 import type { ColumnConfig } from "./lancamentos-columns-config"
 import { LancamentosPeriodFilter } from "./lancamentos-period-filter"
+import { LancamentosPagination } from "./lancamentos-pagination"
 
 interface ContaBancaria {
   id: string
@@ -44,8 +47,13 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
   const [searchTerm, setSearchTerm] = useState("")
   const [rawLancamentos, setRawLancamentos] = useState<any[]>([])
   const [contasBancarias, setContasBancarias] = useState<ContaBancaria[]>([])
-  const [contaSelecionada, setContaSelecionada] = useState<string>("all")
+  const [contasSelecionadas, setContasSelecionadas] = useState<string[]>([])
+  const [planoContasSelecionadas, setPlanoContasSelecionadas] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
+  
+  // Estados de paginação
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(20)
   
   // Ref para controlar se uma busca está em andamento
   const isSearchingRef = useRef(false)
@@ -60,7 +68,7 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
       try {
         return {
           ...l,
-          data_lancamento: new Date(l.data_lancamento),
+          data_lancamento: parseDateFromDatabase(l.data_lancamento),
           // Se tiver dados dos JOINs, usa; senão, mostra apenas os IDs ou 'N/A'
           plano_conta_nome: l.plano_contas 
             ? `${l.plano_contas.codigo} - ${l.plano_contas.nome}` 
@@ -80,7 +88,7 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
         console.error('Erro ao formatar lançamento:', l, formatError)
         return {
           ...l,
-          data_lancamento: l.data_lancamento ? new Date(l.data_lancamento) : new Date(),
+          data_lancamento: l.data_lancamento ? parseDateFromDatabase(l.data_lancamento) : new Date(),
           plano_conta_nome: 'Erro ao formatar',
           centro_custo_nome: 'Erro ao formatar',
           conta_bancaria_nome: 'Erro ao formatar',
@@ -158,9 +166,16 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
     }
 
     // Filtro por conta bancária selecionada
-    if (contaSelecionada && contaSelecionada !== "all") {
+    if (contasSelecionadas.length > 0) {
       filtered = filtered.filter(lancamento => 
-        lancamento.conta_bancaria_id === contaSelecionada
+        contasSelecionadas.includes(lancamento.conta_bancaria_id)
+      )
+    }
+
+    // Filtro por plano de contas selecionado
+    if (planoContasSelecionadas.length > 0) {
+      filtered = filtered.filter(lancamento => 
+        planoContasSelecionadas.includes(lancamento.plano_conta_id)
       )
     }
 
@@ -169,7 +184,7 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
       // Filtro por data início
       if (filtros.dataInicio) {
         filtered = filtered.filter(lancamento => {
-          const dataLancamento = new Date(lancamento.data_lancamento)
+          const dataLancamento = parseDateFromDatabase(lancamento.data_lancamento)
           const dataInicio = new Date(filtros.dataInicio)
           return dataLancamento >= dataInicio
         })
@@ -178,7 +193,7 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
       // Filtro por data fim
       if (filtros.dataFim) {
         filtered = filtered.filter(lancamento => {
-          const dataLancamento = new Date(lancamento.data_lancamento)
+          const dataLancamento = parseDateFromDatabase(lancamento.data_lancamento)
           const dataFim = new Date(filtros.dataFim)
           return dataLancamento <= dataFim
         })
@@ -247,7 +262,33 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
     }
 
     return filtered
-  }, [lancamentos, searchTerm, contaSelecionada, filtros])
+  }, [lancamentos, searchTerm, contasSelecionadas, planoContasSelecionadas, filtros])
+
+  // Lançamentos paginados
+  const paginatedLancamentos = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage
+    const endIndex = startIndex + itemsPerPage
+    return filteredLancamentos.slice(startIndex, endIndex)
+  }, [filteredLancamentos, currentPage, itemsPerPage])
+
+  // Informações de paginação
+  const totalPages = Math.ceil(filteredLancamentos.length / itemsPerPage)
+  const totalItems = filteredLancamentos.length
+
+  // Handlers de paginação
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page)
+  }, [])
+
+  const handleItemsPerPageChange = useCallback((newItemsPerPage: number) => {
+    setItemsPerPage(newItemsPerPage)
+    setCurrentPage(1) // Resetar para primeira página
+  }, [])
+
+  // Reset da página quando filtros mudam
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, contasSelecionadas, planoContasSelecionadas, filtros])
 
   // useCallback para estabilizar onDataChange com debounce
   const stableOnDataChange = useCallback((data: any[]) => {
@@ -274,7 +315,7 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
     }
 
     // Criar uma chave única para os parâmetros da busca
-    const searchParams = `${userData.empresa_id}-${periodFilter?.startDate?.toISOString()}-${periodFilter?.endDate?.toISOString()}-${refresh || 0}`
+    const searchParams = `${userData.empresa_id}-${periodFilter?.startDate ? adjustToLocalTimezone(periodFilter.startDate) : ''}-${periodFilter?.endDate ? adjustToLocalTimezone(periodFilter.endDate) : ''}-${refresh || 0}`
     
     // Verificações mais rigorosas para evitar múltiplas buscas
     if (isSearchingRef.current) {
@@ -322,8 +363,8 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
 
       // Aplicar filtro de período se especificado
       if (periodFilter?.startDate && periodFilter?.endDate) {
-        const startDateString = periodFilter.startDate.toISOString().split('T')[0]
-        const endDateString = periodFilter.endDate.toISOString().split('T')[0]
+        const startDateString = adjustToLocalTimezone(periodFilter.startDate)
+        const endDateString = adjustToLocalTimezone(periodFilter.endDate)
         query = query
           .gte('data_lancamento', startDateString)
           .lte('data_lancamento', endDateString)
@@ -342,8 +383,8 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
 
         // Aplicar filtro de período na consulta simples também
         if (periodFilter?.startDate && periodFilter?.endDate) {
-          const startDateString = periodFilter.startDate.toISOString().split('T')[0]
-          const endDateString = periodFilter.endDate.toISOString().split('T')[0]
+          const startDateString = adjustToLocalTimezone(periodFilter.startDate)
+          const endDateString = adjustToLocalTimezone(periodFilter.endDate)
           simpleQuery = simpleQuery
             .gte('data_lancamento', startDateString)
             .lte('data_lancamento', endDateString)
@@ -514,7 +555,7 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
         <CardHeader>
           <CardTitle className="text-lg sm:text-xl">Lançamentos Contábeis</CardTitle>
           <div className="flex gap-2 sm:gap-4 items-center flex-col sm:flex-row">
-            <div className="relative w-full sm:flex-1">
+            <div className="relative w-full sm:w-80">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
                 placeholder="Buscar..."
@@ -530,25 +571,20 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
                 </div>
               )}
               <div className="w-full sm:w-[200px] min-w-[160px]">
-                <Select 
-                  value={contaSelecionada} 
-                  onValueChange={setContaSelecionada}
-                >
-                  <SelectTrigger className="text-sm">
-                    <SelectValue placeholder="Todas as contas" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas as contas</SelectItem>
-                    {contasBancarias.map((conta) => (
-                      <SelectItem key={conta.id} value={conta.id}>
-                        <span className="block sm:hidden">{conta.banco_nome}</span>
-                        <span className="hidden sm:block">
-                          {conta.banco_nome} - Ag: {conta.agencia} | Cc: {conta.conta}{conta.digito ? `-${conta.digito}` : ''}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ContaBancariaSelect
+                  value={contasSelecionadas}
+                  onValueChange={setContasSelecionadas}
+                  placeholder="Todas as contas"
+                  label=""
+                />
+              </div>
+              <div className="w-full sm:w-[200px] min-w-[160px]">
+                <PlanoContaSelect
+                  value={planoContasSelecionadas}
+                  onValueChange={setPlanoContasSelecionadas}
+                  placeholder="Todos os planos"
+                  label=""
+                />
               </div>
             </div>
           </div>
@@ -615,7 +651,7 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredLancamentos.length === 0 ? (
+                {paginatedLancamentos.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={getVisibleColumnsCount()} className="text-center py-8 text-gray-500">
                       {lancamentos.length === 0 
@@ -625,7 +661,7 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredLancamentos.map((lancamento) => (
+                  paginatedLancamentos.map((lancamento) => (
                     <TableRow key={lancamento.id}>
                       {isColumnVisible('data_lancamento') && (
                         <TableCell className="text-xs sm:text-sm">
@@ -717,6 +753,18 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
           </div>
         </CardContent>
       </Card>
+
+      {/* Componente de Paginação */}
+      <div className="mt-4">
+        <LancamentosPagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredLancamentos.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={handlePageChange}
+          onItemsPerPageChange={handleItemsPerPageChange}
+        />
+      </div>
     </div>
   )
 
@@ -767,7 +815,7 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>Lista de Lançamentos</CardTitle>
-          <div className="relative w-64">
+          <div className="relative w-48">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <Input
               placeholder="Buscar lançamentos..."
