@@ -1,13 +1,10 @@
 "use client"
 import { EmpresaHeader } from "@/components/empresa/empresa-header"
 import { EmpresaForm } from "@/components/empresa/empresa-form"
-import Header from "@/components/ui/header"
 
 export default function EmpresaPage() {
   return (
-    <>
-      <Header />
-      <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50">
       <EmpresaHeader />
 
       <main className="container mx-auto px-4 py-6">
@@ -22,7 +19,5 @@ export default function EmpresaPage() {
           </div>
         </div>
       </main>
-      </div>
-    </>
-  )
+      </div>  )
 }

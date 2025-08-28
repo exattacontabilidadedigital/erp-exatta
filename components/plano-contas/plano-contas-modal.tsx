@@ -8,7 +8,7 @@ interface PlanoContasModalProps {
   onClose: () => void
   isEditing?: boolean
   conta?: any
-    isSubconta?: boolean
+  isSubconta?: boolean
   contaPai?: string
 }
 
@@ -17,15 +17,23 @@ export function PlanoContasModal({
   onClose,
   isEditing = false,
   conta = null,
+  isSubconta = false,
   contaPai = "",
 }: PlanoContasModalProps) {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEditing ? "Editar Conta" : contaPai ? "Nova Subconta" : "Nova Conta"}</DialogTitle>
+          <DialogTitle>
+            {isEditing ? "Editar Conta" : isSubconta ? "Nova Subconta" : "Nova Conta"}
+          </DialogTitle>
         </DialogHeader>
-        <PlanoContasForm onSuccess={onClose} initialData={conta} contaPai={contaPai} isEditing={isEditing} />
+        <PlanoContasForm 
+          onSuccess={onClose} 
+          initialData={conta} 
+          contaPai={isSubconta ? conta?.id : contaPai} 
+          isEditing={isEditing} 
+        />
       </DialogContent>
     </Dialog>
   )

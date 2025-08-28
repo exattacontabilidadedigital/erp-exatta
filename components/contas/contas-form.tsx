@@ -1,8 +1,8 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
+import { useAuth } from "@/contexts/auth-context"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,6 +19,7 @@ interface ContasFormProps {
 }
 
 export function ContasForm({ onSuccess, initialData, isEditing }: ContasFormProps) {
+  const { userData } = useAuth()
   const [formData, setFormData] = useState({
     banco_id: initialData?.banco_id || "",
     agencia: initialData?.agencia || "",
@@ -35,6 +36,7 @@ export function ContasForm({ onSuccess, initialData, isEditing }: ContasFormProp
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [bancos, setBancos] = useState<any[]>([])
+  
   useEffect(() => {
     async function fetchBancos() {
       const { data, error } = await supabase.from("bancos").select("id, codigo, nome, ativo")
@@ -45,10 +47,18 @@ export function ContasForm({ onSuccess, initialData, isEditing }: ContasFormProp
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    if (!userData?.empresa_id) {
+      setError("Empresa não identificada. Faça login novamente.")
+      return
+    }
+    
     setLoading(true)
     setError(null)
+    
     // Monta o objeto para o banco
     const contaData: any = {
+      empresa_id: userData.empresa_id,
       banco_id: formData.banco_id,
       agencia: formData.agencia,
       conta: formData.conta,
@@ -61,6 +71,7 @@ export function ContasForm({ onSuccess, initialData, isEditing }: ContasFormProp
       observacoes: formData.observacoes,
       ativo: Boolean(formData.ativa),
     }
+    
     let error = null
     if (isEditing && initialData?.id) {
       // Atualiza conta existente
@@ -71,30 +82,42 @@ export function ContasForm({ onSuccess, initialData, isEditing }: ContasFormProp
       error = updateError
     } else {
       // Cria nova conta
-      contaData.saldo_atual = Number(formData.saldoInicial)
       const { error: insertError } = await supabase.from("contas_bancarias").insert([contaData])
       error = insertError
     }
+    
     setLoading(false)
+    
     if (error) {
       setError((isEditing ? "Erro ao atualizar conta: " : "Erro ao salvar conta: ") + error.message)
       return
     }
+    
     // Dispara evento para atualizar lista
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("contasAtualizado"))
     }
+    
     // Atualiza lista de contas imediatamente após salvar
     if (typeof window !== "undefined") {
       import("@/lib/supabase/client").then(({ supabase }) => {
         supabase
           .from("contas_bancarias")
-          .select("*, bancos: banco_id (nome)")
+          .select(`
+            *,
+            bancos:banco_id (
+              id,
+              nome,
+              codigo
+            )
+          `)
+          .eq('empresa_id', userData.empresa_id)
           .then(({ data }) => {
             window.dispatchEvent(new CustomEvent("contasAtualizado", { detail: data }));
           });
       });
     }
+    
     if (onSuccess) {
       onSuccess()
     }

@@ -61,3 +61,5 @@ export function LancamentosDeleteModal({ isOpen, onClose, onConfirm, lancamento 
     </Dialog>
   )
 }
+
+export default LancamentosDeleteModal

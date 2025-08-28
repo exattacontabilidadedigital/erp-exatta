@@ -3,7 +3,6 @@
 import { useState, useCallback, useMemo, Suspense, lazy } from "react"
 import { LancamentosHeader } from "@/components/lancamentos/lancamentos-header"
 import { useColumnsConfig } from "@/hooks/use-columns-config"
-import Header from "@/components/ui/header"
 import { supabase } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -289,9 +288,7 @@ export default function LancamentosPage() {
   }
 
   return (
-    <>
-      <Header />
-      <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50">
         <LancamentosHeader
           onNovoLancamento={handleNovoLancamento}
           onToggleFiltros={handleToggleFiltros}
@@ -370,6 +367,5 @@ export default function LancamentosPage() {
           />
         </Suspense>
       </div>
-    </>
   )
 }

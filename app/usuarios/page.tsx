@@ -8,7 +8,6 @@ import { UsuariosDeleteModal } from "@/components/usuarios/usuarios-delete-modal
 import { UsuariosFuncoesModal } from "@/components/usuarios/usuarios-funcoes-modal"
 import { UsuariosFuncoesList } from "@/components/usuarios/usuarios-funcoes-list"
 import { supabase } from "@/lib/supabase/client"
-import Header from "@/components/ui/header"
 
 export default function UsuariosPage() {
   const [funcaoEditando, setFuncaoEditando] = useState<any>(null)
@@ -91,7 +90,6 @@ export default function UsuariosPage() {
 
   return (
     <>
-      <Header />
       <div className="min-h-screen bg-gray-50 py-8 px-4 md:px-8">
       <div className="max-w-5xl mx-auto space-y-8">
         <UsuariosHeader onNovoUsuario={handleNovoUsuario} onConfigurarFuncoes={() => setIsFuncoesListOpen((prev) => !prev)} />

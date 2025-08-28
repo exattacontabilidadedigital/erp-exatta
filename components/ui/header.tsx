@@ -12,11 +12,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useRouter } from "next/navigation"
-import { toast } from "sonner"
+import { useToast } from "@/components/ui/use-toast"
 
 export default function Header() {
   const router = useRouter()
+  const { toast } = useToast()
+  
   const handleLogout = () => {
+    toast({
+      title: "Saindo do sistema",
+      description: "Redirecionando para login...",
+    })
     router.push("/login")
   }
   return (

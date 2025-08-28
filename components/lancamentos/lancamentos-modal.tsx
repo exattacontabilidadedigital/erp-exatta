@@ -55,3 +55,5 @@ export function LancamentosModal({ isOpen, onClose, lancamento, isEditing = fals
     </Dialog>
   )
 }
+
+export default LancamentosModal

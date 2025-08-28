@@ -264,3 +264,5 @@ export function LancamentosImportModal({ isOpen, onClose }: LancamentosImportMod
     </Dialog>
   )
 }
+
+export default LancamentosImportModal

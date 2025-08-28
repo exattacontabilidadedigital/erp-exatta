@@ -27,7 +27,7 @@ export function PlanoContasImportModal({ isOpen, onClose }: PlanoContasImportMod
   const [isFixingEncoding, setIsFixingEncoding] = useState(false)
   const [fixEncodingResult, setFixEncodingResult] = useState<any>(null)
   const { isImporting, progress, importPlanoContas } = useImport()
-  const { userData } = useAuth()
+  const { user } = useAuth()
 
   const handleFileSelect = (selectedFile: File) => {
     const validation = CSVParser.validateCSVFile(selectedFile)
@@ -61,9 +61,9 @@ export function PlanoContasImportModal({ isOpen, onClose }: PlanoContasImportMod
   }
 
   const handleImport = async () => {
-    if (!file || !userData?.empresa_id) return
+    if (!file || !user?.id) return
 
-    const result = await importPlanoContas(file, userData.empresa_id)
+    const result = await importPlanoContas(file, user.id)
     setImportResult(result)
 
     if (result.success) {
@@ -93,11 +93,11 @@ export function PlanoContasImportModal({ isOpen, onClose }: PlanoContasImportMod
   }
 
   const handleFixEncoding = async () => {
-    if (!userData?.empresa_id) return
+    if (!user?.id) return
 
     setIsFixingEncoding(true)
     try {
-      const result = await EncodingFixer.fixPlanoContasEncoding(userData.empresa_id)
+      const result = await EncodingFixer.fixPlanoContasEncoding(user.id)
       setFixEncodingResult(result)
       
       if (result.success && result.totalFixed > 0) {

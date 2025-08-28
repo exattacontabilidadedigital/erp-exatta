@@ -4,13 +4,10 @@ import { FluxoCaixaChart } from "@/components/fluxo-caixa/fluxo-caixa-chart"
 import { FluxoCaixaProjecao } from "@/components/fluxo-caixa/fluxo-caixa-projecao"
 import { FluxoCaixaExtrato } from "@/components/fluxo-caixa/fluxo-caixa-extrato"
 import { FluxoCaixaAlertas } from "@/components/fluxo-caixa/fluxo-caixa-alertas"
-import Header from "@/components/ui/header"
 
 export default function FluxoCaixaPage() {
   return (
-    <>
-      <Header />
-      <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50">
       <FluxoCaixaHeader />
 
       <main className="container mx-auto px-4 py-6 space-y-6">
@@ -33,7 +30,6 @@ export default function FluxoCaixaPage() {
           <FluxoCaixaExtrato />
         </div>
       </main>
-      </div>
-    </>
+    </div>
   )
 }

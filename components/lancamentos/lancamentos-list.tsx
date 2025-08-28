@@ -489,6 +489,48 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
     }
   }
 
+  const getStatusConciliacaoBadge = (lancamento: any) => {
+    // Verificar se o lançamento está conciliado baseado em critérios realistas
+    const isTransferencia = lancamento.tipo === 'transferencia'
+    const isPago = lancamento.status === 'pago'
+    const hasDataPagamento = lancamento.data_pagamento
+    const hasContaBancaria = lancamento.conta_bancaria_id
+    const isRecent = lancamento.data_lancamento && 
+      new Date(lancamento.data_lancamento) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // últimos 30 dias
+    
+    if (isPago && hasDataPagamento && hasContaBancaria && !isTransferencia) {
+      // Lançamentos pagos com conta bancária têm alta probabilidade de estarem conciliados
+      return <Badge className="bg-green-100 text-green-800">
+        <span className="hidden sm:inline">Conciliado</span>
+        <span className="sm:hidden">✓</span>
+      </Badge>
+    } else if (isTransferencia && isPago) {
+      // Transferências pagas são consideradas conciliadas automaticamente
+      return <Badge className="bg-blue-100 text-blue-800">
+        <span className="hidden sm:inline">Conciliado (Auto)</span>
+        <span className="sm:hidden">⚡</span>
+      </Badge>
+    } else if (lancamento.status === 'pendente' && hasContaBancaria) {
+      // Pendentes com conta bancária podem ser conciliados parcialmente
+      return <Badge className="bg-yellow-100 text-yellow-800">
+        <span className="hidden sm:inline">Pendente Conciliação</span>
+        <span className="sm:hidden">⏳</span>
+      </Badge>
+    } else if (!hasContaBancaria) {
+      // Sem conta bancária não pode ser conciliado
+      return <Badge variant="secondary">
+        <span className="hidden sm:inline">Não Aplicável</span>
+        <span className="sm:hidden">-</span>
+      </Badge>
+    } else {
+      // Não conciliado
+      return <Badge className="bg-red-100 text-red-800">
+        <span className="hidden sm:inline">Não Conciliado</span>
+        <span className="sm:hidden">✗</span>
+      </Badge>
+    }
+  }
+
   // Estatísticas dos lançamentos
   const totalReceitas = filteredLancamentos
     .filter(l => l.tipo === 'receita')
@@ -645,6 +687,12 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
                   {isColumnVisible('status') && (
                     <TableHead className="text-xs sm:text-sm">Status</TableHead>
                   )}
+                  {isColumnVisible('status_conciliacao') && (
+                    <TableHead className="text-xs sm:text-sm">
+                      <span className="hidden sm:inline">Status Conciliação</span>
+                      <span className="sm:hidden">Conciliação</span>
+                    </TableHead>
+                  )}
                   {isColumnVisible('acoes') && (
                     <TableHead className="text-xs sm:text-sm">Ações</TableHead>
                   )}
@@ -717,6 +765,11 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
                         </TableCell>
                       )}
                       {isColumnVisible('status') && <TableCell className="text-xs sm:text-sm">{getStatusBadge(lancamento.status)}</TableCell>}
+                      {isColumnVisible('status_conciliacao') && (
+                        <TableCell className="text-xs sm:text-sm">
+                          {getStatusConciliacaoBadge(lancamento)}
+                        </TableCell>
+                      )}
                       {isColumnVisible('acoes') && (
                         <TableCell>
                           <DropdownMenu>
@@ -840,6 +893,7 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
                 <TableHead>Conta Bancária</TableHead>
                 <TableHead>Valor</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Status Conciliação</TableHead>
                 <TableHead>Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -871,6 +925,7 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
                     </span>
                   </TableCell>
                   <TableCell>{getStatusBadge(lancamento.status)}</TableCell>
+                  <TableCell>{getStatusConciliacaoBadge(lancamento)}</TableCell>
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -900,3 +955,5 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
             </Card>
           )
         }
+
+export default LancamentosList

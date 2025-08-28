@@ -334,3 +334,5 @@ export function LancamentosFiltros({ onFilterChange }: LancamentosFiltrosProps) 
     </Card>
   )
 }
+
+export default LancamentosFiltros

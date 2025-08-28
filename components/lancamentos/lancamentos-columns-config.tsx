@@ -25,6 +25,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { key: "cliente_fornecedor", label: "Cliente/Fornecedor", visible: false },
   { key: "valor", label: "Valor", visible: true, required: true },
   { key: "status", label: "Status", visible: true },
+  { key: "status_conciliacao", label: "Status Conciliação", visible: true },
   { key: "acoes", label: "Ações", visible: true, required: true }
 ]
 

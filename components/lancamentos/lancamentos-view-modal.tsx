@@ -169,3 +169,5 @@ export function LancamentosViewModal({ isOpen, onClose, lancamento }: Lancamento
     </Dialog>
   )
 }
+
+export default LancamentosViewModal

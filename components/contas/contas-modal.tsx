@@ -3,17 +3,20 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ContasForm } from "./contas-form"
 
-
 interface ContasModalProps {
   isOpen: boolean
   onClose: () => void
   conta?: any
   isEditing?: boolean
+  onSuccess?: () => void
 }
 
-export function ContasModal({ isOpen, onClose, conta, isEditing }: ContasModalProps) {
+export function ContasModal({ isOpen, onClose, conta, isEditing, onSuccess }: ContasModalProps) {
 
   const handleSuccess = () => {
+    if (onSuccess) {
+      onSuccess()
+    }
     onClose()
   }
 

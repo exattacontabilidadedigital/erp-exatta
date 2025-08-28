@@ -1,5 +1,4 @@
 "use client"
-import Header from "@/components/ui/header"
 import { DepartamentosForm } from "@/components/departamentos/departamentos-form"
 import { ResponsaveisForm } from "@/components/responsaveis/responsaveis-form"
 import { TiposCentroCustosForm } from "@/components/tipos-centro-custos/tipos-centro-custos-form"
@@ -169,7 +168,6 @@ export default function CentroCustosPage() {
 
   return (
     <div className="min-h-screen bg-gray-50" style={{ fontFamily: 'GeistSans, Arial, sans-serif' }}>
-      <Header />
       {/* Modais de cadastro */}
       {isDepartamentosModalOpen && (
         <Dialog open={isDepartamentosModalOpen} onOpenChange={() => setIsDepartamentosModalOpen(false)}>

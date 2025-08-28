@@ -1,6 +1,5 @@
 "use client"
 
-import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { FinancialSummary } from "@/components/dashboard/financial-summary"
 import { CashFlowChart } from "@/components/dashboard/cash-flow-chart"
 import { RecentTransactions } from "@/components/dashboard/recent-transactions"
@@ -36,8 +35,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <DashboardHeader />
-
       <main className="container mx-auto px-4 py-6 space-y-6">
         <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">
           <div className="flex items-center justify-between">

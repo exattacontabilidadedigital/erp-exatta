@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useAuth } from "@/contexts/auth-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Building, TrendingDown, TrendingUp, Wallet } from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
@@ -19,6 +20,7 @@ interface PlanoContasResumoProps {
 }
 
 export function PlanoContasResumo({ refresh, onCardClick, filtroAtivo }: PlanoContasResumoProps) {
+  const { userData } = useAuth()
   const [resumo, setResumo] = useState<ContaResumo>({
     totalContas: 0,
     contasAtivas: 0,
@@ -29,13 +31,16 @@ export function PlanoContasResumo({ refresh, onCardClick, filtroAtivo }: PlanoCo
 
   useEffect(() => {
     async function fetchResumo() {
+      if (!userData?.empresa_id) return
+      
       try {
         setLoading(true)
         
-        // Busca todas as contas
+        // Busca todas as contas da empresa
         const { data: contas, error } = await supabase
           .from('plano_contas')
           .select('ativo, nivel, tipo')
+          .eq('empresa_id', userData.empresa_id)
 
         if (error) {
           console.error('Erro ao buscar resumo:', error)

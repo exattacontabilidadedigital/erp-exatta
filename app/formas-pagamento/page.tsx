@@ -7,7 +7,6 @@ import { FormasPagamentoModal } from "@/components/formas-pagamento/formas-pagam
 import { FormasPagamentoImportModal } from "@/components/formas-pagamento/formas-pagamento-import-modal"
 import { FormasPagamentoRelatorioModal } from "@/components/formas-pagamento/formas-pagamento-relatorio-modal"
 import { FormasPagamentoDeleteModal } from "@/components/formas-pagamento/formas-pagamento-delete-modal"
-import Header from "@/components/ui/header"
 
 export default function FormasPagamentoPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -49,9 +48,7 @@ export default function FormasPagamentoPage() {
   }
 
   return (
-    <>
-      <Header />
-      <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50">
       <FormasPagamentoHeader
         onNovaFormaPagamento={() => setIsModalOpen(true)}
         onImportar={() => setIsImportModalOpen(true)}
@@ -88,6 +85,5 @@ export default function FormasPagamentoPage() {
         formaPagamento={selectedFormaPagamento}
       />
       </div>
-    </>
   )
 }

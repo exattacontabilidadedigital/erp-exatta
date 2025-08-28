@@ -5,7 +5,6 @@ import { BancosHeader } from "@/components/bancos/bancos-header"
 import { BancosList } from "@/components/bancos/bancos-list"
 import { BancosModal } from "@/components/bancos/bancos-modal"
 import { BancosDeleteModal } from "@/components/bancos/bancos-delete-modal"
-import Header from "@/components/ui/header"
 
 interface Banco {
   id: string
@@ -66,9 +65,7 @@ export default function BancosPage() {
   }
 
   return (
-    <>
-      <Header />
-      <div className="min-h-screen bg-gray-50" style={{ fontFamily: 'GeistSans, Arial, sans-serif' }}>
+    <div className="min-h-screen bg-gray-50" style={{ fontFamily: 'GeistSans, Arial, sans-serif' }}>
         <BancosHeader onNovoBanco={handleNovoBanco} />
         <main className="container mx-auto px-4 py-6">
           <BancosList onEdit={handleEditBanco} onDelete={handleDeleteBanco} />
@@ -81,7 +78,5 @@ export default function BancosPage() {
           onConfirm={handleConfirmDelete}
           banco={selectedBanco}
         />
-      </div>
-    </>
-  )
+      </div>  )
 }

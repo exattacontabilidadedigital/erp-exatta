@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Save, X } from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
+import { useAuth } from "@/contexts/auth-context"
 
 interface PlanoContasFormProps {
   onSuccess?: () => void
@@ -24,7 +25,7 @@ export function PlanoContasForm({
   contaPai = "",
   isEditing = false,
 }: PlanoContasFormProps) {
-  const { userData } = require("@/contexts/auth-context").useAuth();
+  const { userData } = useAuth();
   const [formData, setFormData] = useState({
     codigo: "",
     nome: "",
@@ -41,9 +42,12 @@ export function PlanoContasForm({
   // Carrega contas pai do banco
   useEffect(() => {
     const fetchContasPai = async () => {
+      if (!userData?.empresa_id) return
+      
       const { data, error } = await supabase
         .from("plano_contas")
         .select("id, codigo, nome")
+        .eq("empresa_id", userData.empresa_id)
         .order("codigo", { ascending: true })
 
       if (!error && data) {
@@ -158,7 +162,7 @@ export function PlanoContasForm({
       {/* Tipo de Conta */}
       <div className="space-y-2">
         <Label htmlFor="tipo">Tipo de Conta *</Label>
-        <Select value={formData.tipo || undefined} onValueChange={(value) => handleInputChange("tipo", value)}>
+        <Select value={formData.tipo || undefined} onValueChange={(value: string) => handleInputChange("tipo", value)}>
           <SelectTrigger>
             <SelectValue placeholder="Selecione o tipo" />
           </SelectTrigger>
@@ -177,7 +181,7 @@ export function PlanoContasForm({
         <Label htmlFor="contaPai">Conta Pai</Label>
         <Select
           value={formData.contaPaiId || undefined}
-          onValueChange={(value) => handleInputChange("contaPaiId", value)}
+          onValueChange={(value: string) => handleInputChange("contaPaiId", value)}
         >
           <SelectTrigger>
             <SelectValue placeholder="Selecione a conta pai" />
@@ -197,7 +201,7 @@ export function PlanoContasForm({
         <Label htmlFor="natureza">Natureza *</Label>
         <Select
           value={formData.natureza || undefined}
-          onValueChange={(value) => handleInputChange("natureza", value)}
+          onValueChange={(value: string) => handleInputChange("natureza", value)}
         >
           <SelectTrigger>
             <SelectValue placeholder="Selecione a natureza" />
@@ -212,7 +216,7 @@ export function PlanoContasForm({
       {/* Nível */}
       <div className="space-y-2">
         <Label htmlFor="nivel">Nível Hierárquico *</Label>
-        <Select value={formData.nivel || undefined} onValueChange={(value) => handleInputChange("nivel", value)}>
+        <Select value={formData.nivel || undefined} onValueChange={(value: string) => handleInputChange("nivel", value)}>
           <SelectTrigger>
             <SelectValue placeholder="Selecione o nível" />
           </SelectTrigger>
@@ -243,7 +247,7 @@ export function PlanoContasForm({
         <Switch
           id="ativa"
           checked={formData.ativa}
-          onCheckedChange={(checked) => handleInputChange("ativa", checked)}
+          onCheckedChange={(checked: boolean) => handleInputChange("ativa", checked)}
         />
         <Label htmlFor="ativa">Conta Ativa</Label>
       </div>
