@@ -27,7 +27,7 @@ import {
   TrendingUp,
   TrendingDown
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/contexts/toast-context";
 import ConciliacaoActionModal from './conciliacao-action-modal';
 import BuscarExistenteFullscreen from './buscar-existente-fullscreen';
 import BuscarLancamentosModal from './buscar-lancamentos-modal';

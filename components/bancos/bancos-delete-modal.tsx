@@ -31,7 +31,7 @@ export function BancosDeleteModal({ isOpen, onClose, onConfirm, banco }: BancosD
 
           <div className="bg-gray-50 p-3 rounded-lg">
             <div className="flex items-center space-x-2 mb-1">
-              <span className="font-mono text-xs bg-gray-200 px-2 py-1 rounded">{banco.codigo}</span>
+              <span className="text-xs bg-gray-200 px-2 py-1 rounded">{banco.codigo}</span>
               <span className="font-medium">{banco.nome}</span>
             </div>
             <p className="text-sm text-gray-600">{banco.nomeCompleto}</p>

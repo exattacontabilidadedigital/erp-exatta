@@ -173,7 +173,7 @@ export default function ConciliationReports({ bancoId, onBancoChange }: Relatori
                   <SelectValue placeholder="Selecione um banco" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos os bancos</SelectItem>
+                  <SelectItem value="todos">Todos os bancos</SelectItem>
                   {bancos.map((banco) => (
                     <SelectItem key={banco.id} value={banco.id}>
                       {banco.nome} - {banco.banco}

@@ -170,7 +170,7 @@ function TreeNode({
         {/* Informações do centro */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3">
-            <span className="font-mono text-sm text-gray-600 min-w-[80px]">
+            <span className="text-sm text-gray-600 min-w-[80px]">
               {node.codigo}
             </span>
             <span className={`truncate ${

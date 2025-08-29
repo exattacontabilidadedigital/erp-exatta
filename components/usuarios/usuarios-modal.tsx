@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Save, X, User, Shield, Eye, EyeOff } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/contexts/toast-context"
 import { useAuth } from "@/contexts/auth-context"
 import { supabase } from "@/lib/supabase/client"
 

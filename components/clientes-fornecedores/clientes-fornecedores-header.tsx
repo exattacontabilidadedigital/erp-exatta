@@ -1,6 +1,6 @@
 "use client"
 
-import { Users, Plus, ArrowLeft, Upload, Download, FileText } from "lucide-react"
+import { Plus, ArrowLeft, Upload, Download, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
@@ -18,24 +18,18 @@ export function ClientesFornecedoresHeader({
   onRelatorio,
 }: ClientesFornecedoresHeaderProps) {
   return (
-    <header className="bg-white border-b border-gray-200">
-      <div className="container mx-auto px-4 py-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
+    <header className="bg-white border-b border-gray-200 shadow-sm">
+      <div className="container mx-auto px-4">
+        <div className="flex items-center justify-between h-16">
+          <div className="flex items-center space-x-4">
             <Link href="/">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Voltar
+              <Button variant="ghost" size="icon">
+                <ArrowLeft className="w-4 h-4" />
               </Button>
             </Link>
-            <div className="p-2 bg-green-100 rounded-lg">
-              <Users className="h-6 w-6 text-green-600" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Clientes e Fornecedores</h1>
-              <p className="text-gray-600">Gerencie seus parceiros comerciais</p>
-            </div>
+            <h1 className="text-xl font-bold text-gray-900">Clientes e Fornecedores</h1>
           </div>
+
           <div className="flex items-center space-x-2">
             <Button variant="outline" size="sm" onClick={onImportar}>
               <Upload className="w-4 h-4 mr-2" />

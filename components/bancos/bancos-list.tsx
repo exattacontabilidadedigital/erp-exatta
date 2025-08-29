@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Edit, Trash2, Globe, Phone, ChevronLeft, ChevronRight, Search } from "lucide-react"
+import { Edit, Trash2, Globe, Phone, Search } from "lucide-react"
+import { BancosPagination } from "./bancos-pagination"
 
 interface BancosListProps {
   onEdit?: (banco: any) => void
@@ -16,9 +17,9 @@ export function BancosList({ onEdit, onDelete }: BancosListProps) {
   const [allBancos, setAllBancos] = React.useState<any[]>([])
   const [errorMsg, setErrorMsg] = React.useState("")
   const [currentPage, setCurrentPage] = React.useState(1)
+  const [itemsPerPage, setItemsPerPage] = React.useState(10)
   const [loading, setLoading] = React.useState(false)
   const [searchTerm, setSearchTerm] = React.useState("")
-  const itemsPerPage = 10 // Voltando para 10 itens por página
 
   async function fetchAllBancos() {
     setLoading(true)
@@ -92,6 +93,15 @@ export function BancosList({ onEdit, onDelete }: BancosListProps) {
     setSearchTerm(term)
   }
 
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+  }
+
+  const handleItemsPerPageChange = (newItemsPerPage: number) => {
+    setItemsPerPage(newItemsPerPage)
+    setCurrentPage(1) // Reset para primeira página
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -134,7 +144,7 @@ export function BancosList({ onEdit, onDelete }: BancosListProps) {
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <div className="flex items-center space-x-3">
-                          <span className="font-mono text-sm bg-gray-100 px-2 py-1 rounded">{banco.codigo}</span>
+                          <span className="text-sm bg-gray-100 px-2 py-1 rounded">{banco.codigo}</span>
                           <h3 className="font-semibold">{banco.nome}</h3>
                           <Badge className={banco.ativo ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
                             {banco.ativo ? "Ativo" : "Inativo"}
@@ -189,37 +199,15 @@ export function BancosList({ onEdit, onDelete }: BancosListProps) {
             </div>
 
             {/* Paginação */}
-            {filteredBancos.length > 0 && (
-              <div className="flex items-center justify-between mt-6 pt-4 border-t">
-                <div className="text-sm text-gray-500">
-                  {totalPages > 1 ? (
-                    `Página ${currentPage} de ${totalPages} (${filteredBancos.length} bancos)`
-                  ) : (
-                    `${filteredBancos.length} banco${filteredBancos.length > 1 ? 's' : ''} encontrado${filteredBancos.length > 1 ? 's' : ''}`
-                  )}
-                </div>
-                <div className="flex space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1 || loading || totalPages <= 1}
-                  >
-                    <ChevronLeft className="w-4 h-4 mr-1" />
-                    Anterior
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages || loading || totalPages <= 1}
-                  >
-                    Próxima
-                    <ChevronRight className="w-4 h-4 ml-1" />
-                  </Button>
-                </div>
-              </div>
-            )}
+            <BancosPagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              itemsPerPage={itemsPerPage}
+              totalItems={filteredBancos.length}
+              onPageChange={handlePageChange}
+              onItemsPerPageChange={handleItemsPerPageChange}
+              loading={loading}
+            />
           </>
         )}
       </CardContent>

@@ -52,7 +52,7 @@ export function PlanoContasDeleteModal({ isOpen, onClose, onConfirm, conta }: Pl
             <h4 className="font-medium text-gray-900 mb-2">Conta a ser excluída:</h4>
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-sm font-medium text-gray-700">{conta.codigo}</span>
+                <span className="text-sm font-medium text-gray-700">{conta.codigo}</span>
                 <span className="text-sm text-gray-900">{conta.nome}</span>
               </div>
               <div className="flex items-center gap-2">

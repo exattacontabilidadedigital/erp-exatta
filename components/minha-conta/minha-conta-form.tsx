@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Save, X, Upload, User, Eye, EyeOff, Bell, Shield, Palette } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/contexts/toast-context"
 
 export function MinhaContaForm() {
   const { toast } = useToast()

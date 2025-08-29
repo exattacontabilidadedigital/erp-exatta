@@ -8,6 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Save, X } from "lucide-react"
+import { supabase } from "@/lib/supabase/client"
+import { useAuth } from "@/contexts/auth-context"
 
 interface ClientesFornecedoresFormProps {
   onSuccess?: () => void
@@ -16,6 +18,7 @@ interface ClientesFornecedoresFormProps {
 }
 
 export function ClientesFornecedoresForm({ onSuccess, initialData, isEditing }: ClientesFornecedoresFormProps) {
+  const { userData } = useAuth()
   const [formData, setFormData] = useState({
     tipo: "",
     nome: "",
@@ -31,15 +34,17 @@ export function ClientesFornecedoresForm({ onSuccess, initialData, isEditing }: 
     observacoes: "",
     ativo: true,
   })
+  const [loading, setLoading] = useState(false)
 
   React.useEffect(() => {
     if (initialData && isEditing) {
+      console.log("Dados recebidos para edição:", initialData) // Debug
       setFormData({
         tipo: initialData.tipo || "",
         nome: initialData.nome || "",
         razaoSocial: initialData.razao_social || "",
         documento: initialData.cpf_cnpj || "",
-        tipoDocumento: initialData.tipo_pessoa === "juridica" ? "CNPJ" : "CPF",
+        tipoDocumento: initialData.tipo_pessoa === "juridica" ? "cnpj" : "cpf",
         email: initialData.email || "",
         telefone: initialData.telefone || "",
         endereco: initialData.endereco || "",
@@ -54,52 +59,120 @@ export function ClientesFornecedoresForm({ onSuccess, initialData, isEditing }: 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Monta objeto para tabela
-    const tipoPessoa = formData.tipoDocumento === "CNPJ" ? "juridica" : "fisica";
-    let tipo = formData.tipo;
-    if (!["cliente", "fornecedor", "ambos"].includes(tipo)) {
-      tipo = "cliente";
-    }
-    const clienteFornecedor = {
-      tipo,
-      tipo_pessoa: tipoPessoa,
-      nome: formData.nome,
-      razao_social: formData.razaoSocial,
-      cpf_cnpj: formData.documento,
-      rg_ie: "",
-      cep: formData.cep,
-      endereco: formData.endereco,
-      numero: "",
-      complemento: "",
-      bairro: "",
-      cidade: formData.cidade,
-      estado: formData.estado,
-      telefone: formData.telefone,
-      celular: "",
-      email: formData.email,
-      site: "",
-      contato: "",
-      observacoes: formData.observacoes,
-      ativo: formData.ativo,
-    }
-    let error
-    if (isEditing && initialData?.id) {
-      ({ error } = await import("@/lib/supabase/client").then(({ supabase }) =>
-        supabase.from("clientes_fornecedores").update(clienteFornecedor).eq("id", initialData.id)
-      ))
-    } else {
-      ({ error } = await import("@/lib/supabase/client").then(({ supabase }) =>
-        supabase.from("clientes_fornecedores").insert([clienteFornecedor])
-      ))
-    }
-    if (error) {
-      alert("Erro ao salvar cliente/fornecedor: " + error.message)
+    setLoading(true)
+
+    // Validações básicas
+    if (!formData.tipo) {
+      alert("Tipo é obrigatório!")
+      setLoading(false)
       return
     }
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("clientesFornecedoresAtualizado"))
+
+    if (!formData.nome.trim()) {
+      alert("Nome é obrigatório!")
+      setLoading(false)
+      return
     }
-    onSuccess?.()
+
+    if (!formData.tipoDocumento) {
+      alert("Tipo de documento é obrigatório!")
+      setLoading(false)
+      return
+    }
+
+    if (!formData.documento.trim()) {
+      alert("Documento é obrigatório!")
+      setLoading(false)
+      return
+    }
+
+    // Validação de email se fornecido
+    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      alert("Email inválido!")
+      setLoading(false)
+      return
+    }
+
+    // Verificar se já existe um cliente/fornecedor com o mesmo documento
+    const { data: existingCliente, error: checkError } = await supabase
+      .from("clientes_fornecedores")
+      .select("id")
+      .eq("cpf_cnpj", formData.documento.trim())
+      .eq("empresa_id", userData?.empresa_id)
+      .neq("id", initialData?.id || "")
+
+    if (checkError) {
+      alert("Erro ao verificar documento: " + checkError.message)
+      setLoading(false)
+      return
+    }
+
+    if (existingCliente && existingCliente.length > 0) {
+      alert("Já existe um cliente/fornecedor com este documento!")
+      setLoading(false)
+      return
+    }
+
+    try {
+      // Monta objeto para tabela
+      const tipoPessoa = formData.tipoDocumento === "cnpj" ? "juridica" : "fisica"
+      let tipo = formData.tipo
+      if (!["cliente", "fornecedor", "ambos"].includes(tipo)) {
+        tipo = "cliente"
+      }
+
+      const clienteFornecedor = {
+        tipo,
+        tipo_pessoa: tipoPessoa,
+        nome: formData.nome.trim(),
+        razao_social: formData.razaoSocial.trim() || null,
+        cpf_cnpj: formData.documento.trim(),
+        rg_ie: "",
+        cep: formData.cep.trim() || null,
+        endereco: formData.endereco.trim() || null,
+        numero: "",
+        complemento: "",
+        bairro: "",
+        cidade: formData.cidade.trim() || null,
+        estado: formData.estado || null,
+        telefone: formData.telefone.trim() || null,
+        celular: "",
+        email: formData.email.trim() || null,
+        site: "",
+        contato: "",
+        observacoes: formData.observacoes.trim() || null,
+        ativo: formData.ativo,
+        empresa_id: userData?.empresa_id,
+      }
+
+      let error
+      if (isEditing && initialData?.id) {
+        const { error: updateError } = await supabase
+          .from("clientes_fornecedores")
+          .update(clienteFornecedor)
+          .eq("id", initialData.id)
+        error = updateError
+      } else {
+        const { error: insertError } = await supabase
+          .from("clientes_fornecedores")
+          .insert([clienteFornecedor])
+        error = insertError
+      }
+
+      if (error) {
+        alert("Erro ao salvar cliente/fornecedor: " + error.message)
+        setLoading(false)
+        return
+      }
+
+      alert(isEditing ? "Cliente/Fornecedor atualizado com sucesso!" : "Cliente/Fornecedor criado com sucesso!")
+      limparFormulario()
+      onSuccess?.()
+    } catch (error) {
+      alert("Erro inesperado: " + (error as Error).message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleInputChange = (field: string, value: string | boolean) => {
@@ -274,11 +347,11 @@ export function ClientesFornecedoresForm({ onSuccess, initialData, isEditing }: 
       </div>
 
       <div className="flex space-x-2 pt-4">
-        <Button type="submit" className="flex-1">
+        <Button type="submit" className="flex-1" disabled={loading}>
           <Save className="w-4 h-4 mr-2" />
-          Salvar
+          {loading ? "Salvando..." : isEditing ? "Atualizar" : "Salvar"}
         </Button>
-        <Button type="button" variant="outline" onClick={limparFormulario}>
+        <Button type="button" variant="outline" onClick={limparFormulario} disabled={loading}>
           <X className="w-4 h-4 mr-2" />
           Limpar
         </Button>

@@ -331,7 +331,7 @@ export function PlanoContasTree({ onAdicionarSubconta, onEditar, onExcluir, onTo
             
             <div className="flex-1">
               <div className="flex items-center space-x-2 mb-1">
-                <span className="font-mono text-sm font-medium text-gray-900">
+                <span className="text-sm font-medium text-gray-900">
                   {node.codigo}
                 </span>
                 <Badge variant="secondary" className={getBadgeColor(node.tipo)}>

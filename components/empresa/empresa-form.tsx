@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Save, X, Upload, ImageIcon, Trash2 } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/contexts/toast-context"
 export function EmpresaForm() {
   const { toast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)

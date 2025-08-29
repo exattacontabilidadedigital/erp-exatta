@@ -311,7 +311,7 @@ export default function BuscarLancamentosModal({
                 <SelectValue placeholder="Tipo" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Todos os tipos</SelectItem>
+                <SelectItem value="todos">Todos os tipos</SelectItem>
                 <SelectItem value="receita">Receita</SelectItem>
                 <SelectItem value="despesa">Despesa</SelectItem>
               </SelectContent>
@@ -325,7 +325,7 @@ export default function BuscarLancamentosModal({
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Todos os status</SelectItem>
+                <SelectItem value="todos">Todos os status</SelectItem>
                 <SelectItem value="pendente">Pendente</SelectItem>
                 <SelectItem value="conciliado">Conciliado</SelectItem>
               </SelectContent>
