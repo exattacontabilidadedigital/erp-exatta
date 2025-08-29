@@ -8,12 +8,18 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
-import { Plus, Edit, Trash2, MoreHorizontal, ChevronDown, ChevronRight, Search } from "lucide-react"
+import { Plus, Edit, Trash2, MoreHorizontal, ChevronDown, ChevronRight, Search, ToggleLeft, ToggleRight } from "lucide-react"
 import { PlanoContasPagination } from "./plano-contas-pagination"
 
 type ContaNode = {
@@ -38,7 +44,19 @@ interface PlanoContasTreeProps {
   filtroCard?: string
 }
 
-// Função para construir árvore hierárquica
+// Função para determinar se uma conta é sintética ou analítica
+function isContaSintetica(codigo: string): boolean {
+  // Regra: Contas com até 3 segmentos são sintéticas, 4+ segmentos são analíticas
+  // Exemplos: 1, 1.1, 1.1.1 = sintéticas | 1.1.1.01, 1.1.1.002 = analíticas
+  const segmentos = codigo.split('.').length
+  return segmentos <= 3
+}
+
+function isContaAnalitica(codigo: string): boolean {
+  return !isContaSintetica(codigo)
+}
+
+// Função para construir arvore hierarquica
 function buildTree(flatList: ContaNode[]): ContaNode[] {
   console.log("Construindo árvore com dados:", flatList.length, "itens")
   const nodesById: { [id: string]: ContaNode } = {}
@@ -88,7 +106,7 @@ export function PlanoContasTree({ onAdicionarSubconta, onEditar, onExcluir, onTo
   const [searchTerm, setSearchTerm] = useState("")
   const [loading, setLoading] = useState(false)
   
-  // Estados de paginação
+  // Estados de paginacao
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(25)
   const [totalItems, setTotalItems] = useState(0)
@@ -99,8 +117,8 @@ export function PlanoContasTree({ onAdicionarSubconta, onEditar, onExcluir, onTo
     try {
       setLoading(true)
       
-      // Buscar TODAS as contas para construir a árvore corretamente
-      // A paginação será aplicada depois na visualização
+      // Buscar TODAS as contas para construir a arvore corretamente
+      // A paginacao sera aplicada depois na visualizacao
       const { data, error } = await supabase
         .from('plano_contas')
         .select('*')
@@ -129,7 +147,7 @@ export function PlanoContasTree({ onAdicionarSubconta, onEditar, onExcluir, onTo
     fetchContas()
   }, [refresh])
 
-  // Handlers de paginação
+  // Handlers de paginacao
   const handlePageChange = (page: number) => {
     setCurrentPage(page)
   }
@@ -206,7 +224,7 @@ export function PlanoContasTree({ onAdicionarSubconta, onEditar, onExcluir, onTo
           includeNode = node.tipo.toLowerCase() === 'despesa'
           break
         case 'patrimonio':
-          includeNode = node.tipo.toLowerCase() === 'patrimônio liquido' || node.tipo.toLowerCase() === 'patrimonio liquido'
+          includeNode = node.tipo.toLowerCase() === 'patrimonio liquido'
           break
         default:
           includeNode = true
@@ -227,7 +245,7 @@ export function PlanoContasTree({ onAdicionarSubconta, onEditar, onExcluir, onTo
     return filteredNodes
   }
 
-  // Função para achatar a árvore em uma lista para paginação
+  // Função para achatar a arvore em uma lista para paginacao
   const flattenTreeForPagination = (nodes: ContaNode[]): ContaNode[] => {
     const result: ContaNode[] = []
     
@@ -244,48 +262,92 @@ export function PlanoContasTree({ onAdicionarSubconta, onEditar, onExcluir, onTo
     return result
   }
 
+  // Função para criar um mapa de nos com filhos
+  const createChildrenMap = (nodes: ContaNode[]): Set<string> => {
+    const childrenSet = new Set<string>()
+    
+    const traverse = (nodes: ContaNode[]) => {
+      for (const node of nodes) {
+        if (node.children && node.children.length > 0) {
+          childrenSet.add(node.id)
+          traverse(node.children)
+        }
+      }
+    }
+    
+    traverse(nodes)
+    return childrenSet
+  }
+
+  // Função para filtrar itens baseado no estado de expansao
+  const filterExpandedItems = (items: ContaNode[]): ContaNode[] => {
+    const result: ContaNode[] = []
+    const parentStack: string[] = []
+    
+    for (const item of items) {
+      const depth = parseInt(item.nivel || '0')
+      
+      // Remove pais que não são mais relevantes
+      while (parentStack.length > depth) {
+        parentStack.pop()
+      }
+      
+      // Verifica se o item deve ser mostrado
+      let shouldShow = true
+      
+      // Se tem pais na stack, verifica se todos estão expandidos
+      for (const parentId of parentStack) {
+        if (!expandedNodes.has(parentId)) {
+          shouldShow = false
+          break
+        }
+      }
+      
+      if (shouldShow) {
+        result.push(item)
+        
+        // Se o item tem filhos, adiciona à stack
+        if (nodesWithChildren.has(item.id)) {
+          parentStack.push(item.id)
+        }
+      }
+    }
+    
+    return result
+  }
+
   // Aplica ambos os filtros
   let contasFiltradas = filterContasByCard(contas, filtroCard || '')
   contasFiltradas = filterContas(contasFiltradas, searchTerm)
   
-  // Achata a árvore filtrada para paginação
+  // Cria mapa de nos com filhos
+  const nodesWithChildren = createChildrenMap(contasFiltradas)
+  
+  // Achata a arvore filtrada
   const contasAchatadas = flattenTreeForPagination(contasFiltradas)
   
-  // Calcula paginação
-  const totalItemsFiltrados = contasAchatadas.length
+  // Aplica filtro de expansao
+  const contasVisiveis = filterExpandedItems(contasAchatadas)
+  
+  // Calcula paginacao baseada nos itens visiveis
+  const totalItemsFiltrados = contasVisiveis.length
   const totalPages = Math.ceil(totalItemsFiltrados / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
-  const contasPaginadas = contasAchatadas.slice(startIndex, endIndex)
+  const contasPaginadas = contasVisiveis.slice(startIndex, endIndex)
   
-  // Reconstrói a estrutura hierárquica apenas para os itens da página atual
-  const buildPageTree = (flatItems: ContaNode[]): ContaNode[] => {
-    const itemsById: { [id: string]: ContaNode } = {}
-    const tree: ContaNode[] = []
-    
-    // Cria mapa de itens com children vazios
-    flatItems.forEach(item => {
-      itemsById[item.id] = { ...item, children: [] }
-    })
-    
-    // Constrói árvore apenas com itens da página
-    flatItems.forEach(item => {
-      if (item.conta_pai_id && itemsById[item.conta_pai_id]) {
-        itemsById[item.conta_pai_id].children!.push(itemsById[item.id])
-      } else {
-        tree.push(itemsById[item.id])
-      }
-    })
-    
-    return tree
-  }
+  // Itens para renderizar
+  const contasParaRenderizar = contasPaginadas
   
-  const contasParaRenderizar = buildPageTree(contasPaginadas)
-  
-  // Atualiza total de itens para paginação
+  // Atualiza total de itens para paginacao
   useEffect(() => {
     setTotalItems(totalItemsFiltrados)
   }, [totalItemsFiltrados])
+
+  // Reset pagina quando estado de expansao mudar
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [expandedNodes])
 
   const getBadgeColor = (tipo: string) => {
     switch (tipo.toLowerCase()) {
@@ -297,7 +359,6 @@ export function PlanoContasTree({ onAdicionarSubconta, onEditar, onExcluir, onTo
         return 'bg-blue-100 text-blue-800'
       case 'despesa':
         return 'bg-orange-100 text-orange-800'
-      case 'patrimônio liquido':
       case 'patrimonio liquido':
         return 'bg-purple-100 text-purple-800'
       default:
@@ -305,10 +366,17 @@ export function PlanoContasTree({ onAdicionarSubconta, onEditar, onExcluir, onTo
     }
   }
 
-  const renderNode = (node: ContaNode, depth: number = 0) => {
-    const hasChildren = node.children && node.children.length > 0
-    const isExpanded = expandedNodes.has(node.id)
+  const renderNode = (node: ContaNode) => {
+    const depth = parseInt(node.nivel || '0')
     const paddingLeft = depth * 24
+    
+    // Verifica se o nó tem filhos usando o mapa
+    const hasChildren = nodesWithChildren.has(node.id)
+    const isExpanded = expandedNodes.has(node.id)
+    
+    // Verifica se é conta sintética (não recebe lançamentos)
+    const isSintetica = isContaSintetica(node.codigo)
+    const isAnalitica = isContaAnalitica(node.codigo)
 
     return (
       <div key={node.id} className="border-b border-gray-100 last:border-b-0">
@@ -320,7 +388,8 @@ export function PlanoContasTree({ onAdicionarSubconta, onEditar, onExcluir, onTo
             {hasChildren ? (
               <button
                 onClick={() => toggleNode(node.id)}
-                className="p-1 hover:bg-gray-200 rounded"
+                className="p-1 hover:bg-gray-200 rounded transition-colors"
+                title={isExpanded ? "Contrair" : "Expandir"}
               >
                 {isExpanded ? (
                   <ChevronDown className="w-4 h-4 text-gray-500" />
@@ -334,8 +403,43 @@ export function PlanoContasTree({ onAdicionarSubconta, onEditar, onExcluir, onTo
 
             <div className="flex-1">
               <div className="flex items-center space-x-2">
-                <span className="font-mono text-sm text-gray-600">{node.codigo}</span>
-                <span className="font-medium text-gray-900">{node.nome}</span>
+                <span className={`text-sm text-black ${isSintetica ? 'font-bold' : 'font-medium'}`}>
+                  {node.codigo}
+                </span>
+                <span className={`text-gray-900 ${isSintetica ? 'font-bold uppercase' : 'font-normal'}`}>
+                  {isSintetica ? node.nome.toUpperCase() : node.nome}
+                </span>
+                
+                {/* Tags para identificar Analítica vs Sintética */}
+                {isAnalitica && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 cursor-help">
+                          A
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Analítica - Recebe lançamentos diretamente</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                {isSintetica && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 cursor-help">
+                          S
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Sintética - Consolida valores das subcontas</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                
                 <Badge className={`text-xs ${getBadgeColor(node.tipo)}`}>
                   {node.tipo}
                 </Badge>
@@ -367,7 +471,17 @@ export function PlanoContasTree({ onAdicionarSubconta, onEditar, onExcluir, onTo
                 Editar
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onToggleAtivo?.(node)}>
-                {node.ativo ? "Desativar" : "Ativar"}
+                {node.ativo ? (
+                  <>
+                    <ToggleLeft className="mr-2 h-4 w-4" />
+                    Desativar
+                  </>
+                ) : (
+                  <>
+                    <ToggleRight className="mr-2 h-4 w-4" />
+                    Ativar
+                  </>
+                )}
               </DropdownMenuItem>
               <DropdownMenuItem 
                 onClick={() => onExcluir?.(node)}
@@ -379,12 +493,6 @@ export function PlanoContasTree({ onAdicionarSubconta, onEditar, onExcluir, onTo
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-
-        {hasChildren && isExpanded && (
-          <div>
-            {node.children!.map((child) => renderNode(child, depth + 1))}
-          </div>
-        )}
       </div>
     )
   }
@@ -445,7 +553,7 @@ export function PlanoContasTree({ onAdicionarSubconta, onEditar, onExcluir, onTo
           )}
         </div>
         
-        {/* Paginação */}
+        {/* Paginacao */}
         {totalItemsFiltrados > 0 && (
           <PlanoContasPagination
             currentPage={currentPage}

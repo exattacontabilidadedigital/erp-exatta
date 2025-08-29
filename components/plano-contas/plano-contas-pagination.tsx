@@ -34,6 +34,11 @@ export function PlanoContasPagination({
   };
 
   const getVisiblePages = () => {
+    if (totalPages <= 7) {
+      // Se temos 7 páginas ou menos, mostra todas
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+
     const delta = 2;
     const range = [];
     const rangeWithDots = [];
@@ -66,8 +71,8 @@ export function PlanoContasPagination({
 
   if (totalItems === 0) {
     return (
-      <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200">
-        <div className="text-sm text-gray-700">
+      <div className="flex items-center justify-center px-6 py-4 bg-white border-t border-gray-200">
+        <div className="text-sm text-gray-500">
           Nenhuma conta encontrada
         </div>
       </div>
@@ -75,25 +80,26 @@ export function PlanoContasPagination({
   }
 
   return (
-    <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200">
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 bg-white border-t border-gray-200">
+      {/* Informações dos itens */}
       <div className="flex items-center space-x-2">
-        <div className="text-sm text-gray-700">
-          Mostrando <span className="font-medium">{startItem}</span> a{' '}
-          <span className="font-medium">{endItem}</span> de{' '}
-          <span className="font-medium">{totalItems}</span> contas
+        <div className="text-sm text-gray-600">
+          Mostrando <span className="font-semibold text-gray-900">{startItem}</span> a{' '}
+          <span className="font-semibold text-gray-900">{endItem}</span> de{' '}
+          <span className="font-semibold text-gray-900">{totalItems}</span> contas
         </div>
       </div>
 
       <div className="flex items-center space-x-4">
         {/* Seletor de itens por página */}
         <div className="flex items-center space-x-2">
-          <span className="text-sm text-gray-700">Itens por página:</span>
+          <span className="text-sm text-gray-600">Itens por página:</span>
           <Select
             value={itemsPerPage.toString()}
             onValueChange={(value: string) => onItemsPerPageChange(parseInt(value))}
             disabled={loading}
           >
-            <SelectTrigger className="w-20">
+            <SelectTrigger className="w-16 h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -113,7 +119,8 @@ export function PlanoContasPagination({
             size="sm"
             onClick={() => handlePageChange(1)}
             disabled={currentPage === 1 || loading}
-            className="h-8 w-8 p-0"
+            className="h-8 w-8 p-0 hover:bg-gray-100"
+            title="Primeira página"
           >
             <ChevronsLeft className="h-4 w-4" />
           </Button>
@@ -124,29 +131,36 @@ export function PlanoContasPagination({
             size="sm"
             onClick={() => handlePageChange(currentPage - 1)}
             disabled={currentPage === 1 || loading}
-            className="h-8 w-8 p-0"
+            className="h-8 w-8 p-0 hover:bg-gray-100"
+            title="Página anterior"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
 
           {/* Números das páginas */}
-          {getVisiblePages().map((page, index) => (
-            <React.Fragment key={index}>
-              {page === '...' ? (
-                <span className="px-2 py-1 text-sm text-gray-500">...</span>
-              ) : (
-                <Button
-                  variant={currentPage === page ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => handlePageChange(page as number)}
-                  disabled={loading}
-                  className="h-8 w-8 p-0"
-                >
-                  {page}
-                </Button>
-              )}
-            </React.Fragment>
-          ))}
+          <div className="flex items-center space-x-1">
+            {getVisiblePages().map((page, index) => (
+              <React.Fragment key={index}>
+                {page === '...' ? (
+                  <span className="px-2 py-1 text-sm text-gray-400">...</span>
+                ) : (
+                  <Button
+                    variant={currentPage === page ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handlePageChange(page as number)}
+                    disabled={loading}
+                    className={`h-8 w-8 p-0 text-sm font-medium ${
+                      currentPage === page 
+                        ? "bg-blue-600 text-white hover:bg-blue-700" 
+                        : "hover:bg-gray-100"
+                    }`}
+                  >
+                    {page}
+                  </Button>
+                )}
+              </React.Fragment>
+            ))}
+          </div>
 
           {/* Próxima página */}
           <Button
@@ -154,7 +168,8 @@ export function PlanoContasPagination({
             size="sm"
             onClick={() => handlePageChange(currentPage + 1)}
             disabled={currentPage === totalPages || loading}
-            className="h-8 w-8 p-0"
+            className="h-8 w-8 p-0 hover:bg-gray-100"
+            title="Próxima página"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -165,7 +180,8 @@ export function PlanoContasPagination({
             size="sm"
             onClick={() => handlePageChange(totalPages)}
             disabled={currentPage === totalPages || loading}
-            className="h-8 w-8 p-0"
+            className="h-8 w-8 p-0 hover:bg-gray-100"
+            title="Última página"
           >
             <ChevronsRight className="h-4 w-4" />
           </Button>

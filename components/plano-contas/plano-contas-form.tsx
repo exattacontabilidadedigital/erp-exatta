@@ -32,12 +32,88 @@ export function PlanoContasForm({
     tipo: "",
     contaPaiId: "", // agora trabalha com id
     natureza: "",
-    nivel: "",
     descricao: "",
     ativa: true,
   })
 
   const [contasPai, setContasPai] = useState<any[]>([])
+  const [contaPaiSelecionada, setContaPaiSelecionada] = useState<any>(null)
+
+  // Função para transformar conta pai em sintética quando receber subcontas
+  const transformarContaPaiEmSintetica = async (contaPaiId: string) => {
+    try {
+      // Busca a conta pai
+      const { data: contaPai, error: fetchError } = await supabase
+        .from("plano_contas")
+        .select("id, codigo, nome, tipo")
+        .eq("id", contaPaiId)
+        .single()
+
+      if (fetchError || !contaPai) return
+
+      // Verifica se a conta pai é analítica (4+ segmentos)
+      const segmentos = contaPai.codigo.split('.').length
+      const isAnalitica = segmentos >= 4
+
+      if (isAnalitica) {
+        // Transforma em sintética adicionando sufixo
+        const novoNome = `${contaPai.nome} (Sintética)`
+        
+        const { error: updateError } = await supabase
+          .from("plano_contas")
+          .update({ 
+            nome: novoNome,
+            // Adiciona flag para indicar que foi transformada
+            descricao: `Conta transformada em sintética ao receber subcontas em ${new Date().toLocaleDateString()}`
+          })
+          .eq("id", contaPaiId)
+
+        if (updateError) {
+          console.error("Erro ao transformar conta pai:", updateError)
+        } else {
+          console.log(`Conta ${contaPai.codigo} transformada em sintética`)
+        }
+      }
+    } catch (error) {
+      console.error("Erro na transformação da conta pai:", error)
+    }
+  }
+
+  // Função para sugerir próximo código de subconta
+  const sugerirProximoCodigo = async (contaPaiId: string) => {
+    if (!contaPaiId || !userData?.empresa_id) return
+
+    const { data: contaPai, error } = await supabase
+      .from("plano_contas")
+      .select("codigo")
+      .eq("id", contaPaiId)
+      .single()
+
+    if (error || !contaPai) return
+
+    // Busca subcontas existentes
+    const { data: subcontas, error: subError } = await supabase
+      .from("plano_contas")
+      .select("codigo")
+      .eq("conta_pai_id", contaPaiId)
+      .eq("empresa_id", userData.empresa_id)
+      .order("codigo")
+
+    if (subError) return
+
+    // Calcula próximo número
+    const prefixo = contaPai.codigo
+    let proximoNumero = 1
+
+    if (subcontas && subcontas.length > 0) {
+      const ultimoCodigo = subcontas[subcontas.length - 1].codigo
+      const ultimoNumero = parseInt(ultimoCodigo.split('.').pop() || '0')
+      proximoNumero = ultimoNumero + 1
+    }
+
+    const proximoCodigo = `${prefixo}.${proximoNumero.toString().padStart(2, '0')}`
+    setFormData(prev => ({ ...prev, codigo: proximoCodigo }))
+  }
 
   // Carrega contas pai do banco
   useEffect(() => {
@@ -68,17 +144,37 @@ export function PlanoContasForm({
         tipo: initialData.tipo ? String(initialData.tipo).toLowerCase() : "",
         contaPaiId,
         natureza: initialData.natureza ? String(initialData.natureza).toLowerCase() : "",
-        nivel: initialData.nivel ? String(initialData.nivel) : "",
+
         descricao: initialData.descricao ?? "",
         ativa: initialData.ativo ?? true,
       })
     } else if (contaPai) {
       setFormData((prev) => ({ ...prev, contaPaiId: contaPai }))
+      // Se for uma nova subconta, sugere o próximo código
+      if (!isEditing) {
+        sugerirProximoCodigo(contaPai)
+      }
     }
-  }, [initialData, contaPai, contasPai])
+  }, [initialData, contaPai, contasPai, isEditing])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Validações básicas
+    if (!formData.codigo.trim()) {
+      alert("Código da conta é obrigatório!")
+      return
+    }
+
+    if (!formData.nome.trim()) {
+      alert("Nome da conta é obrigatório!")
+      return
+    }
+
+    if (!formData.tipo) {
+      alert("Tipo da conta é obrigatório!")
+      return
+    }
 
     // Validação extra para natureza
     const naturezaValida = formData.natureza === "debito" || formData.natureza === "credito"
@@ -87,13 +183,34 @@ export function PlanoContasForm({
       return
     }
 
+    // Validação de código único
+    const { data: existingConta, error: checkError } = await supabase
+      .from("plano_contas")
+      .select("id")
+      .eq("codigo", formData.codigo)
+      .eq("empresa_id", userData?.empresa_id)
+      .neq("id", initialData?.id || "")
+
+    if (checkError) {
+      alert("Erro ao verificar código: " + checkError.message)
+      return
+    }
+
+    if (existingConta && existingConta.length > 0) {
+      alert("Já existe uma conta com este código!")
+      return
+    }
+
+    // Calcula o nível automaticamente baseado no código
+    const nivelCalculado = formData.codigo.split('.').length
+
     const novaConta = {
       codigo: formData.codigo,
       nome: formData.nome,
       tipo: formData.tipo,
       conta_pai_id: formData.contaPaiId || null,
       natureza: formData.natureza,
-      nivel: formData.nivel !== "" ? Number(formData.nivel) : null,
+      nivel: nivelCalculado,
       descricao: formData.descricao ?? null,
       ativo: formData.ativa,
       status: "ativo",
@@ -112,6 +229,11 @@ export function PlanoContasForm({
       return
     }
 
+    // Se criou uma subconta, verifica se precisa transformar a conta pai em sintética
+    if (!isEditing && formData.contaPaiId) {
+      await transformarContaPaiEmSintetica(formData.contaPaiId)
+    }
+
     if (onSuccess) {
       onSuccess()
     }
@@ -120,6 +242,11 @@ export function PlanoContasForm({
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
+    
+    // Se mudou a conta pai e não está editando, sugere novo código
+    if (field === "contaPaiId" && !isEditing && value) {
+      sugerirProximoCodigo(value as string)
+    }
   }
 
   const limparFormulario = () => {
@@ -129,23 +256,80 @@ export function PlanoContasForm({
       tipo: "",
       contaPaiId: contaPai || "", // Mantém conta pai se for subconta
       natureza: "",
-      nivel: "",
+
       descricao: "",
       ativa: true,
     })
   }
 
+  // Busca informações da conta pai para exibir
+  const contaPaiInfo = contasPai.find(conta => conta.id === formData.contaPaiId)
+  
+  // Verifica se a conta pai é analítica (será transformada em sintética)
+  const contaPaiIsAnalitica = contaPaiInfo && contaPaiInfo.codigo.split('.').length >= 4
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Indicador de Subconta */}
+      {contaPaiInfo && (
+        <div className="space-y-2">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+              <span className="text-sm font-medium text-blue-800">
+                Criando subconta de: {contaPaiInfo.codigo} - {contaPaiInfo.nome}
+              </span>
+            </div>
+          </div>
+          
+          {/* Aviso sobre transformação em sintética */}
+          {contaPaiIsAnalitica && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <div className="flex items-start gap-2">
+                <div className="w-2 h-2 bg-amber-500 rounded-full mt-1.5"></div>
+                <div className="text-sm">
+                  <p className="font-medium text-amber-800">
+                    ⚠️ Transformação Automática
+                  </p>
+                  <p className="text-amber-700 mt-1">
+                    A conta pai <strong>{contaPaiInfo.codigo}</strong> é analítica e será automaticamente 
+                    transformada em <strong>sintética</strong> ao receber esta subconta. 
+                    Ela não receberá mais lançamentos diretamente.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {/* Código da Conta */}
       <div className="space-y-2">
         <Label htmlFor="codigo">Código da Conta *</Label>
-        <Input
-          id="codigo"
-          placeholder="Ex: 1.1.01.001"
-          value={formData.codigo}
-          onChange={(e) => handleInputChange("codigo", e.target.value)}
-        />
+        <div className="flex gap-2">
+          <Input
+            id="codigo"
+            placeholder="Ex: 1.1.01.001"
+            value={formData.codigo}
+            onChange={(e) => handleInputChange("codigo", e.target.value)}
+            className="flex-1"
+          />
+          {formData.contaPaiId && !isEditing && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => sugerirProximoCodigo(formData.contaPaiId)}
+              className="whitespace-nowrap"
+            >
+              Auto
+            </Button>
+          )}
+        </div>
+        {formData.contaPaiId && (
+          <p className="text-xs text-gray-500">
+            Código será gerado automaticamente baseado na conta pai
+          </p>
+        )}
       </div>
 
       {/* Nome da Conta */}
@@ -213,22 +397,7 @@ export function PlanoContasForm({
         </Select>
       </div>
 
-      {/* Nível */}
-      <div className="space-y-2">
-        <Label htmlFor="nivel">Nível Hierárquico *</Label>
-        <Select value={formData.nivel || undefined} onValueChange={(value: string) => handleInputChange("nivel", value)}>
-          <SelectTrigger>
-            <SelectValue placeholder="Selecione o nível" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="1">1 - Grupo</SelectItem>
-            <SelectItem value="2">2 - Subgrupo</SelectItem>
-            <SelectItem value="3">3 - Conta</SelectItem>
-            <SelectItem value="4">4 - Subconta</SelectItem>
-            <SelectItem value="5">5 - Conta Analítica</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+
 
       {/* Descrição */}
       <div className="space-y-2">
