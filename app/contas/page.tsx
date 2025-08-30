@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { supabase } from "@/lib/supabase/client"
 import { ContasHeader } from "@/components/contas/contas-header"
@@ -9,11 +10,12 @@ import { ContasModal } from "@/components/contas/contas-modal"
 import { ContasViewModal } from "@/components/contas/contas-view-modal"
 import { ContasDeleteModal } from "@/components/contas/contas-delete-modal"
 import { ContasExtratoModal } from "@/components/contas/contas-extrato-modal"
-import { ContasConciliacaoModal } from "@/components/contas/contas-conciliacao-modal"
+
 import { ContasImportModal } from "@/components/contas/contas-import-modal"
 
 export default function ContasPage() {
   const { userData } = useAuth()
+  const router = useRouter()
   const [contas, setContas] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -23,7 +25,6 @@ export default function ContasPage() {
   const [showViewModal, setShowViewModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showExtratoModal, setShowExtratoModal] = useState(false)
-  const [showConciliacaoModal, setShowConciliacaoModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [selectedConta, setSelectedConta] = useState<any>(null)
 
@@ -88,8 +89,13 @@ export default function ContasPage() {
   }
 
   const handleConciliarConta = (conta: any) => {
-    setSelectedConta(conta)
-    setShowConciliacaoModal(true)
+    // Redirecionar para a página de conciliação com parâmetros da conta
+    const params = new URLSearchParams({
+      conta_id: conta.id,
+      conta_nome: conta.nome || conta.bancos?.nome || 'Conta',
+      banco: conta.bancos?.nome || conta.banco_id || 'Banco'
+    })
+    router.push(`/conciliacao?${params.toString()}`)
   }
 
   const handleImportarExtrato = () => {
@@ -165,11 +171,7 @@ export default function ContasPage() {
         conta={selectedConta}
       />
 
-      <ContasConciliacaoModal
-        isOpen={showConciliacaoModal}
-        onClose={() => setShowConciliacaoModal(false)}
-        conta={selectedConta}
-      />
+
 
       <ContasImportModal
         isOpen={showImportModal}

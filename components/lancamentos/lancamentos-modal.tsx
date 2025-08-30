@@ -33,7 +33,7 @@ export function LancamentosModal({ isOpen, onClose, lancamento, isEditing = fals
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" aria-describedby="lancamentos-modal-description">
+      <DialogContent className="max-w-8xl max-h-[90vh] overflow-y-auto" aria-describedby="lancamentos-modal-description">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Editar Lançamento" : "Novo Lançamento"}</DialogTitle>
         </DialogHeader>

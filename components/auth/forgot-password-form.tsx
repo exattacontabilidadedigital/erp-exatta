@@ -9,12 +9,13 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Mail, CheckCircle } from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
-import { toast } from "sonner"
+import { useToast } from "@/contexts/toast-context"
 
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
+  const { toast } = useToast()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -26,14 +27,26 @@ export function ForgotPasswordForm() {
       })
 
       if (error) {
-        toast.error("Erro ao enviar email: " + error.message)
+        toast({
+          title: "Erro ao enviar email",
+          description: error.message,
+          variant: "destructive",
+        })
         return
       }
 
       setIsSuccess(true)
-      toast.success("Email de recuperação enviado com sucesso!")
+      toast({
+        title: "Email enviado com sucesso!",
+        description: "Verifique sua caixa de entrada e spam.",
+        variant: "success",
+      })
     } catch (error) {
-      toast.error("Erro inesperado ao enviar email")
+      toast({
+        title: "Erro inesperado",
+        description: "Falha ao enviar email de recuperação. Tente novamente.",
+        variant: "destructive",
+      })
       console.error("Reset password error:", error)
     } finally {
       setIsLoading(false)
@@ -59,8 +72,9 @@ export function ForgotPasswordForm() {
 
   return (
     <Card className="shadow-lg">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl text-center">Recuperar Senha</CardTitle>
+      <CardHeader className="space-y-1 pb-6">
+        <CardTitle className="text-2xl font-bold text-center text-gray-900">Recuperar Senha</CardTitle>
+        <p className="text-sm text-gray-600 text-center">Digite seu email para receber o link de recuperação</p>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -80,8 +94,19 @@ export function ForgotPasswordForm() {
             </div>
           </div>
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? "Enviando..." : "Enviar instruções"}
+          <Button 
+            type="submit" 
+            className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors" 
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <div className="flex items-center justify-center">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                Enviando...
+              </div>
+            ) : (
+              "Enviar instruções"
+            )}
           </Button>
         </form>
       </CardContent>

@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Lock, Eye, EyeOff, CheckCircle } from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
-import { toast } from "sonner"
+import { useToast } from "@/contexts/toast-context"
 
 export function ResetPasswordForm() {
   const [password, setPassword] = useState("")
@@ -21,6 +21,7 @@ export function ResetPasswordForm() {
 
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { toast } = useToast()
 
   useEffect(() => {
     // Verificar se há um token de reset na URL
@@ -41,12 +42,20 @@ export function ResetPasswordForm() {
     e.preventDefault()
 
     if (password !== confirmPassword) {
-      toast.error("As senhas não coincidem")
+      toast({
+        title: "Senhas não coincidem",
+        description: "As senhas digitadas não são iguais. Tente novamente.",
+        variant: "destructive",
+      })
       return
     }
 
     if (password.length < 6) {
-      toast.error("A senha deve ter pelo menos 6 caracteres")
+      toast({
+        title: "Senha muito curta",
+        description: "A senha deve ter pelo menos 6 caracteres.",
+        variant: "destructive",
+      })
       return
     }
 
@@ -58,19 +67,31 @@ export function ResetPasswordForm() {
       })
 
       if (error) {
-        toast.error("Erro ao redefinir senha: " + error.message)
+        toast({
+          title: "Erro ao redefinir senha",
+          description: error.message,
+          variant: "destructive",
+        })
         return
       }
 
       setIsSuccess(true)
-      toast.success("Senha redefinida com sucesso!")
+      toast({
+        title: "Senha redefinida com sucesso!",
+        description: "Sua senha foi alterada. Redirecionando para o login...",
+        variant: "success",
+      })
 
       // Redirecionar para login após 2 segundos
       setTimeout(() => {
         router.push("/login")
       }, 2000)
     } catch (error) {
-      toast.error("Erro inesperado ao redefinir senha")
+      toast({
+        title: "Erro inesperado",
+        description: "Falha ao redefinir senha. Tente novamente.",
+        variant: "destructive",
+      })
       console.error("Reset password error:", error)
     } finally {
       setIsLoading(false)
@@ -94,8 +115,9 @@ export function ResetPasswordForm() {
 
   return (
     <Card className="shadow-lg">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl text-center">Nova Senha</CardTitle>
+      <CardHeader className="space-y-1 pb-6">
+        <CardTitle className="text-2xl font-bold text-center text-gray-900">Nova Senha</CardTitle>
+        <p className="text-sm text-gray-600 text-center">Digite sua nova senha para continuar</p>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -147,8 +169,19 @@ export function ResetPasswordForm() {
             </div>
           </div>
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? "Redefinindo..." : "Redefinir Senha"}
+          <Button 
+            type="submit" 
+            className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors" 
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <div className="flex items-center justify-center">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                Redefinindo...
+              </div>
+            ) : (
+              "Redefinir Senha"
+            )}
           </Button>
         </form>
       </CardContent>

@@ -69,14 +69,31 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false, ce
   });
   useEffect(() => {
     if (isEditing && initialData) {
+      // Determina o centro pai baseado no código e nível
+      let centroPaiId = "__none__";
+      
+      if (initialData.nivel > 1 && initialData.codigo) {
+        // Se tem nível > 1, tenta encontrar o centro pai baseado no código
+        // Exemplo: se código é "CC001.001", o pai seria "CC001"
+        const codigoParts = initialData.codigo.split('.');
+        if (codigoParts.length > 1) {
+          const codigoPai = codigoParts.slice(0, -1).join('.');
+          // Procura o centro pai nas opções carregadas
+          const centroPai = centroPaiOptions.find(c => c.codigo === codigoPai);
+          if (centroPai) {
+            centroPaiId = centroPai.id;
+          }
+        }
+      }
+      
       setFormData({
         codigo: initialData.codigo ?? "",
         nome: initialData.nome ?? "",
         tipo: initialData.tipo ?? "",
         nivel: initialData.nivel ?? 1,
-        centroPai: initialData.centro_pai_id ?? "__none__",
-        responsavel: initialData.responsavel ?? (responsavelOptions[0]?.id ?? ""),
-        departamento: initialData.departamento ?? (departamentoOptions[0]?.id ?? ""),
+        centroPai: centroPaiId,
+        responsavel: initialData.responsavel ?? "",
+        departamento: initialData.departamento ?? "",
         orcamentoMensal: initialData.orcamento_mensal ?? "",
         descricao: initialData.descricao ?? "",
         ativo: typeof initialData.ativo === "boolean" ? initialData.ativo : true,
@@ -98,7 +115,32 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false, ce
         aceitaLancamentos: true, // Subcentros por padrão aceitam lançamentos
       });
     }
-  }, [isEditing, initialData, centroPai, responsavelOptions, departamentoOptions]);
+  }, [isEditing, initialData, centroPai, centroPaiOptions]);
+
+  // useEffect adicional para carregar dados iniciais quando as opções estiverem disponíveis
+  useEffect(() => {
+    if (isEditing && initialData && tipoOptions.length > 0 && responsavelOptions.length > 0 && departamentoOptions.length > 0) {
+      // Verificar se os valores existem nas opções disponíveis
+      const tipoExiste = tipoOptions.some(tipo => tipo.nome === initialData.tipo);
+      const responsavelExiste = responsavelOptions.some(resp => resp.nome === initialData.responsavel);
+      const departamentoExiste = departamentoOptions.some(dep => dep.nome === initialData.departamento);
+      
+      const newFormData = {
+        codigo: initialData.codigo ?? "",
+        nome: initialData.nome ?? "",
+        tipo: tipoExiste ? initialData.tipo : "",
+        nivel: initialData.nivel ?? 1,
+        centroPai: initialData.centro_pai_id ?? "__none__",
+        responsavel: responsavelExiste ? initialData.responsavel : "",
+        departamento: departamentoExiste ? initialData.departamento : "",
+        orcamentoMensal: initialData.orcamento_mensal ?? "",
+        descricao: initialData.descricao ?? "",
+        ativo: typeof initialData.ativo === "boolean" ? initialData.ativo : true,
+        aceitaLancamentos: typeof initialData.aceita_lancamentos === "boolean" ? initialData.aceita_lancamentos : true,
+      };
+      setFormData(newFormData);
+    }
+  }, [isEditing, initialData, tipoOptions, responsavelOptions, departamentoOptions]);
 
   function handleInputChange(field: string, value: any) {
     setFormData((prev) => {
@@ -145,10 +187,8 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false, ce
     
     // Define o nível baseado no centro pai selecionado
     let nivel = 1;
-    let centroPaiId = null;
     
     if (formData.centroPai && formData.centroPai !== "__none__") {
-      centroPaiId = formData.centroPai;
       const centroPai = centroPaiOptions.find(c => c.id === formData.centroPai);
       if (centroPai) {
         nivel = (centroPai.nivel || 1) + 1;
@@ -162,7 +202,7 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false, ce
         nome: formData.nome,
         tipo: formData.tipo,
         nivel: nivel,
-        centro_pai_id: centroPaiId,
+        // centro_pai_id removido - campo não existe na tabela
         responsavel: formData.responsavel,
         departamento: formData.departamento,
         orcamento_mensal: orcamentoFinal,
@@ -189,7 +229,7 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false, ce
         nome: formData.nome,
         tipo: formData.tipo,
         nivel: nivel,
-        centro_pai_id: centroPaiId,
+        // centro_pai_id removido - campo não existe na tabela
         responsavel: formData.responsavel,
         departamento: formData.departamento,
         orcamento_mensal: orcamentoFinal,
@@ -224,6 +264,8 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false, ce
     limparFormulario();
   }
 
+
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
@@ -249,7 +291,8 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false, ce
       <div className="space-y-2">
         <Label htmlFor="departamento">Departamento</Label>
         <Select
-          value={formData.departamento}
+          key={`departamento-${formData.departamento}-${departamentoOptions.length}`}
+          value={formData.departamento || undefined}
           onValueChange={(value) => handleInputChange("departamento", value)}
         >
           <SelectTrigger>
@@ -265,7 +308,8 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false, ce
       <div className="space-y-2">
         <Label htmlFor="responsavel">Responsável</Label>
         <Select
-          value={formData.responsavel}
+          key={`responsavel-${formData.responsavel}-${responsavelOptions.length}`}
+          value={formData.responsavel || undefined}
           onValueChange={(value) => handleInputChange("responsavel", value)}
         >
           <SelectTrigger>
@@ -281,7 +325,8 @@ export function CentroCustosForm({ onSuccess, initialData, isEditing = false, ce
       <div className="space-y-2">
         <Label htmlFor="tipo">Tipo</Label>
         <Select
-          value={formData.tipo}
+          key={`tipo-${formData.tipo}-${tipoOptions.length}`}
+          value={formData.tipo || undefined}
           onValueChange={(value) => handleInputChange("tipo", value)}
         >
           <SelectTrigger>

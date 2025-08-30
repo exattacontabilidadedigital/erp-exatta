@@ -38,6 +38,15 @@ interface Lancamento {
   forma_pagamento_id: string
   descricao: string
   status: string
+  // Novos campos para condição de recebimento
+  data_vencimento?: Date
+  recebimento_realizado?: boolean
+  data_pagamento?: Date
+  juros?: number
+  multa?: number
+  desconto?: number
+  valor_pago?: number
+  valor_original?: number // Valor original da operação
 }
 
 interface LancamentosFormProps {
@@ -50,6 +59,8 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
   const { userData } = useAuth()
   const { toast } = useToast()
   const [date, setDate] = useState<Date | undefined>(initialData?.data_lancamento)
+  const [vencimentoDate, setVencimentoDate] = useState<Date | undefined>(initialData?.data_vencimento)
+  const [dataPagamentoDate, setDataPagamentoDate] = useState<Date | undefined>(initialData?.data_pagamento)
   const [formData, setFormData] = useState({
     tipo: initialData?.tipo || "",
     numero_documento: initialData?.numero_documento || "",
@@ -63,6 +74,15 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
     forma_pagamento_id: initialData?.forma_pagamento_id || "",
     descricao: initialData?.descricao || "",
     status: initialData?.status || "pendente",
+    // Novos campos para condição de recebimento
+    data_vencimento: initialData?.data_vencimento || "",
+    recebimento_realizado: initialData?.recebimento_realizado || false,
+    data_pagamento: initialData?.data_pagamento || "",
+    juros: initialData?.juros?.toString() || "",
+    multa: initialData?.multa?.toString() || "",
+    desconto: initialData?.desconto?.toString() || "",
+    valor_pago: initialData?.valor_pago?.toString() || "",
+    valor_original: initialData?.valor_original?.toString() || "",
   })
 
   // Estados para opções dos dropdowns (apenas forma de pagamento ainda usa Select tradicional)
@@ -105,11 +125,37 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
           forma_pagamento_id: initialData.forma_pagamento_id,
           descricao: initialData.descricao,
           status: initialData.status,
+          // Novos campos para condição de recebimento
+          data_vencimento: initialData.data_vencimento || "",
+          recebimento_realizado: initialData.recebimento_realizado || false,
+          data_pagamento: initialData.data_pagamento || "",
+          juros: initialData.juros?.toString() || "",
+          multa: initialData.multa?.toString() || "",
+          desconto: initialData.desconto?.toString() || "",
+          valor_pago: initialData.valor_pago?.toString() || "",
+          valor_original: initialData.valor_original?.toString() || "",
         })
+        
+        // Atualizar as datas
+        setVencimentoDate(initialData.data_vencimento)
+        setDataPagamentoDate(initialData.data_pagamento)
       }
       setDate(initialData.data_lancamento)
     }
   }, [initialData])
+
+  // Função para calcular valor pago/recebido
+  const calcularValorPago = () => {
+    if (formData.valor) {
+      const valor = parseFloat(formData.valor) || 0
+      const juros = parseFloat(formData.juros) || 0
+      const multa = parseFloat(formData.multa) || 0
+      const desconto = parseFloat(formData.desconto) || 0
+      
+      return valor + juros + multa - desconto
+    }
+    return 0
+  }
 
   const fetchOptions = async () => {
     if (!userData?.empresa_id) {
@@ -203,6 +249,15 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
         forma_pagamento_id: "",
         descricao: descricaoLimpa,
         status: lancamentoAtual.status,
+        // Novos campos para condição de recebimento
+        data_vencimento: "",
+        recebimento_realizado: false,
+        data_pagamento: "",
+        juros: "",
+        multa: "",
+        desconto: "",
+        valor_pago: "",
+        valor_original: "",
       })
       
       console.log("Dados de transferência configurados para edição")
@@ -223,6 +278,15 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
         forma_pagamento_id: lancamentoAtual.forma_pagamento_id,
         descricao: lancamentoAtual.descricao,
         status: lancamentoAtual.status,
+        // Novos campos para condição de recebimento
+        data_vencimento: "",
+        recebimento_realizado: false,
+        data_pagamento: "",
+        juros: "",
+        multa: "",
+        desconto: "",
+        valor_pago: "",
+        valor_original: "",
       })
     }
   }
@@ -543,7 +607,7 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
       console.log("UserData:", userData)
       console.log("FormData completo:", formData)
       
-      devLog.lancamentos("Iniciando salvamento do lançamento", { formData, date, userData }, 'showSaveProcess')
+      devLog("Iniciando salvamento do lançamento", { formData, date, userData }, 'showSaveProcess')
       
       // Estrutura de dados diferente para transferência
       if (formData.tipo === "transferencia") {
@@ -742,12 +806,20 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
       }
 
       // Para receitas e despesas normais
+      // Determinar o valor principal baseado no tipo e se foi pago/recebido
+      let valorPrincipal = parseFloat(formData.valor)
+      
+      // Se foi pago/recebido, usar o valor efetivo
+      if (formData.recebimento_realizado && formData.valor_pago && formData.valor_pago !== "") {
+        valorPrincipal = parseFloat(formData.valor_pago)
+      }
+
       const lancamentoData = {
         tipo: formData.tipo,
         numero_documento: formData.numero_documento || null,
         data_lancamento: adjustToLocalTimezone(date),
         descricao: formData.descricao.trim(),
-        valor: parseFloat(formData.valor),
+        valor: valorPrincipal, // Usar valor efetivo se pago/recebido
         plano_conta_id: formData.plano_conta_id,
         centro_custo_id: formData.centro_custo_id,
         conta_bancaria_id: formData.conta_bancaria_id,
@@ -756,39 +828,111 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
         empresa_id: userData.empresa_id,
         usuario_id: userData.id,
         status: formData.status,
+        // Novos campos para condição de recebimento
+        data_vencimento: vencimentoDate ? adjustToLocalTimezone(vencimentoDate) : null,
+        recebimento_realizado: formData.recebimento_realizado || false,
+        data_pagamento: dataPagamentoDate ? adjustToLocalTimezone(dataPagamentoDate) : null,
+        juros: formData.juros && formData.juros !== "" ? parseFloat(formData.juros) : 0,
+        multa: formData.multa && formData.multa !== "" ? parseFloat(formData.multa) : 0,
+        desconto: formData.desconto && formData.desconto !== "" ? parseFloat(formData.desconto) : 0,
+        valor_pago: formData.valor_pago && formData.valor_pago !== "" ? parseFloat(formData.valor_pago) : 0,
+        // Manter o valor original para referência
+        valor_original: parseFloat(formData.valor),
       }
 
-      devLog.lancamentos("Dados do lançamento a serem salvos:", lancamentoData, 'showSaveProcess')
+      // Validação dos campos obrigatórios
+      if (!lancamentoData.tipo || !lancamentoData.numero_documento || !lancamentoData.plano_conta_id || 
+          !lancamentoData.centro_custo_id || !lancamentoData.valor || !lancamentoData.empresa_id || 
+          !lancamentoData.usuario_id) {
+        console.error("=== CAMPOS OBRIGATÓRIOS FALTANDO ===")
+        console.error("tipo:", lancamentoData.tipo)
+        console.error("numero_documento:", lancamentoData.numero_documento)
+        console.error("plano_conta_id:", lancamentoData.plano_conta_id)
+        console.error("centro_custo_id:", lancamentoData.centro_custo_id)
+        console.error("valor:", lancamentoData.valor)
+        console.error("empresa_id:", lancamentoData.empresa_id)
+        console.error("usuario_id:", lancamentoData.usuario_id)
+        throw new Error("Campos obrigatórios não preenchidos")
+      }
+
+      // Validação do userData
+      if (!userData || !userData.id || !userData.empresa_id) {
+        console.error("=== ERRO DE AUTENTICAÇÃO ===")
+        console.error("userData:", userData)
+        console.error("userData.id:", userData?.id)
+        console.error("userData.empresa_id:", userData?.empresa_id)
+        throw new Error("Usuário não autenticado ou dados incompletos")
+      }
+
+      devLog("Dados do lançamento a serem salvos:", lancamentoData, 'showSaveProcess')
+      console.log("=== DADOS COMPLETOS PARA SALVAMENTO ===")
+      console.log("lancamentoData:", JSON.stringify(lancamentoData, null, 2))
+      console.log("=== VERIFICAÇÃO DE CAMPOS OBRIGATÓRIOS ===")
+      console.log("tipo:", lancamentoData.tipo)
+      console.log("numero_documento:", lancamentoData.numero_documento)
+      console.log("plano_conta_id:", lancamentoData.plano_conta_id)
+      console.log("centro_custo_id:", lancamentoData.centro_custo_id)
+      console.log("valor:", lancamentoData.valor)
+      console.log("empresa_id:", lancamentoData.empresa_id)
+      console.log("usuario_id:", lancamentoData.usuario_id)
       
       // Log específico para dados de status "pago"
       if (formData.status === 'pago') {
-        devLog.lancamentos("PAYLOAD PARA STATUS 'PAGO':", lancamentoData, 'showPaymentStatusDetails')
+        devLog("PAYLOAD PARA STATUS 'PAGO':", lancamentoData, 'showPaymentStatusDetails')
       }
 
       let result
       if (isEditing && initialData?.id) {
-        devLog.lancamentos("Atualizando lançamento existente:", initialData.id, 'showSaveProcess')
+        console.log("=== ATUALIZANDO LANÇAMENTO EXISTENTE ===")
+        console.log("ID do lançamento:", initialData.id)
+        console.log("Dados para atualização:", JSON.stringify(lancamentoData, null, 2))
+        
+        devLog("Atualizando lançamento existente:", initialData.id, 'showSaveProcess')
         result = await supabase
           .from("lancamentos")
           .update(lancamentoData)
           .eq("id", initialData.id)
           .select()
       } else {
-        devLog.lancamentos("Criando novo lançamento", undefined, 'showSaveProcess')
+        console.log("=== CRIANDO NOVO LANÇAMENTO ===")
+        console.log("Dados para inserção:", JSON.stringify(lancamentoData, null, 2))
+        
+        devLog("Criando novo lançamento", undefined, 'showSaveProcess')
         result = await supabase
           .from("lancamentos")
           .insert([lancamentoData])
           .select()
       }
 
-      devLog.lancamentos("Resultado da operação:", result, 'showSaveProcess')
+      console.log("=== RESULTADO DA OPERAÇÃO ===")
+      console.log("Resultado completo:", result)
+      console.log("Resultado.data:", result.data)
+      console.log("Resultado.error:", result.error)
+      console.log("Resultado.count:", result.count)
+      
+      devLog("Resultado da operação:", result, 'showSaveProcess')
 
       if (result.error) {
-        devLog.error("Erro do Supabase:", result.error)
+        console.error("=== ERRO DO SUPABASE ===")
+        console.error("Erro completo:", result.error)
+        console.error("Error.message:", result.error.message)
+        console.error("Error.code:", result.error.code)
+        console.error("Error.details:", result.error.details)
+        console.error("Error.hint:", result.error.hint)
+        console.error("Dados enviados:", JSON.stringify(lancamentoData, null, 2))
         throw result.error
       }
 
-      devLog.lancamentos("Lançamento salvo com sucesso!", undefined, 'showSaveProcess')
+      if (!result.data || result.data.length === 0) {
+        console.error("=== ERRO: NENHUM DADO RETORNADO ===")
+        console.error("Resultado:", result)
+        throw new Error("Nenhum dado foi retornado pela operação")
+      }
+
+      console.log("=== SUCESSO ===")
+      console.log("Lançamento salvo:", result.data[0])
+      
+      devLog("Lançamento salvo com sucesso!", undefined, 'showSaveProcess')
 
       toast({
         title: "Sucesso!",
@@ -805,15 +949,20 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
         handleClear()
       }
     } catch (error: any) {
-      console.error("Erro completo ao salvar lançamento:", error)
+      console.error("=== ERRO AO SALVAR LANÇAMENTO ===")
+      console.error("Erro completo:", error)
       console.error("Tipo do erro:", typeof error)
       console.error("Stack do erro:", error.stack)
+      console.error("Error.message:", error.message)
+      console.error("Error.code:", error.code)
+      console.error("Error.details:", error.details)
+      console.error("Error.hint:", error.hint)
       
-      devLog.error("Erro completo ao salvar lançamento:", error)
+      console.error("Erro completo ao salvar lançamento:", error)
       
       // Log específico para erros com status "pago"
       if (formData.status === 'pago') {
-        devLog.lancamentos("ERRO ESPECÍFICO COM STATUS 'PAGO':", {
+        devLog("ERRO ESPECÍFICO COM STATUS 'PAGO':", {
           error: error,
           errorMessage: error.message,
           errorCode: error.code,
@@ -866,7 +1015,7 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
     }
   }
 
-  const handleInputChange = (field: string, value: string) => {
+  const handleInputChange = (field: string, value: string | boolean) => {
     setFormData((prev) => {
       const newData = { ...prev, [field]: value }
       
@@ -914,8 +1063,19 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
       forma_pagamento_id: "",
       descricao: "",
       status: "pendente",
+      // Novos campos para condição de recebimento
+              data_vencimento: "",
+      recebimento_realizado: false,
+      data_pagamento: "",
+      juros: "",
+      multa: "",
+      desconto: "",
+      valor_pago: "",
+      valor_original: "",
     })
     setDate(undefined)
+    setVencimentoDate(undefined)
+    setDataPagamentoDate(undefined)
   }
 
   if (loading) {
@@ -927,78 +1087,99 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
   }
 
   return (
-    <div className="space-y-4">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Tipo de Lançamento */}
-        <div className="space-y-2">
-          <Label htmlFor="tipo">Tipo de Lançamento *</Label>
-          <Select value={formData.tipo} onValueChange={(value) => handleInputChange("tipo", value)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Selecione o tipo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="receita">Receita</SelectItem>
-              <SelectItem value="despesa">Despesa</SelectItem>
-              <SelectItem value="transferencia">Transferência Bancária</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+    <div className="space-y-5">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Primeira linha: Tipo, Data e Número do Documento */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Tipo de Lançamento */}
+          <div className="space-y-1.5">
+            <Label htmlFor="tipo">Tipo de Lançamento *</Label>
+            <Select value={formData.tipo} onValueChange={(value) => handleInputChange("tipo", value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="receita">Receita</SelectItem>
+                <SelectItem value="despesa">Despesa</SelectItem>
+                <SelectItem value="transferencia">Transferência</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-        {/* Data */}
-        <div className="space-y-2">
-          <Label>Data do Lançamento *</Label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {date ? format(date, "dd/MM/yyyy", { locale: ptBR }) : "Selecione a data"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
-              <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
-            </PopoverContent>
-          </Popover>
+          {/* Data */}
+          <div className="space-y-1.5">
+            <Label>Data do Lançamento *</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {date ? format(date, "dd/MM/yyyy", { locale: ptBR }) : "dd/mm/aaaa"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          {/* Número do Documento */}
+          <div className="space-y-1.5">
+            <Label htmlFor="numero_documento">Número do Documento *</Label>
+            <Input
+              id="numero_documento"
+              type="text"
+              value={formData.numero_documento}
+              onChange={(e) => handleInputChange("numero_documento", e.target.value)}
+              placeholder="NF, Boleto, Recibo..."
+              className="bg-transparent"
+            />
+          </div>
         </div>
 
         {/* Campos condicionais baseados no tipo de lançamento */}
         {formData.tipo === "transferencia" ? (
           // Campos específicos para transferência
           <>
-            {/* Conta Origem */}
-            <div className="space-y-2">
-              <Label>Conta Origem *</Label>
-              <ContaBancariaSelect
-                value={formData.conta_origem_id ? [formData.conta_origem_id] : []}
-                onValueChange={(values) => handleInputChange("conta_origem_id", values[0] || "")}
-                placeholder="Selecione a conta de origem"
-              />
-            </div>
+            {/* Segunda linha: Contas e Valor */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Conta Origem */}
+              <div className="space-y-1.5">
+                <Label>Conta Origem *</Label>
+                <ContaBancariaSelect
+                  value={formData.conta_origem_id ? [formData.conta_origem_id] : []}
+                  onValueChange={(values) => handleInputChange("conta_origem_id", values[0] || "")}
+                  placeholder="Selecione a conta de origem"
+                  label=""
+                />
+              </div>
 
-            {/* Conta Destino */}
-            <div className="space-y-2">
-              <Label>Conta Destino *</Label>
-              <ContaBancariaSelect
-                value={formData.conta_destino_id ? [formData.conta_destino_id] : []}
-                onValueChange={(values) => handleInputChange("conta_destino_id", values[0] || "")}
-                placeholder="Selecione a conta de destino"
-              />
-            </div>
+              {/* Conta Destino */}
+              <div className="space-y-1.5">
+                <Label>Conta Destino *</Label>
+                <ContaBancariaSelect
+                  value={formData.conta_destino_id ? [formData.conta_destino_id] : []}
+                  onValueChange={(values) => handleInputChange("conta_destino_id", values[0] || "")}
+                  placeholder="Selecione a conta de destino"
+                  label=""
+                />
+              </div>
 
-            {/* Valor */}
-            <div className="space-y-2">
-              <Label htmlFor="valor">Valor (R$) *</Label>
-              <Input
-                id="valor"
-                type="number"
-                step="0.01"
-                placeholder="0,00"
-                value={formData.valor}
-                onChange={(e) => handleInputChange("valor", e.target.value)}
-              />
+              {/* Valor */}
+              <div className="space-y-1.5">
+                <Label htmlFor="valor">Valor (R$) *</Label>
+                <Input
+                  id="valor"
+                  type="number"
+                  step="0.01"
+                  placeholder="0,00"
+                  value={formData.valor}
+                  onChange={(e) => handleInputChange("valor", e.target.value)}
+                />
+              </div>
             </div>
 
             {/* Histórico */}
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="descricao">Histórico *</Label>
               <Textarea
                 id="descricao"
@@ -1012,91 +1193,96 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
         ) : (
           // Campos para receita e despesa
           <>
-            {/* Número do Documento */}
-            <div className="space-y-2">
-              <Label htmlFor="numero_documento">Número do Documento *</Label>
-              <Input
-                id="numero_documento"
-                placeholder="NF, Boleto, Recibo..."
-                value={formData.numero_documento}
-                onChange={(e) => handleInputChange("numero_documento", e.target.value)}
-              />
+            {/* Segunda linha: Plano de Contas, Centro de Custo e Valor */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Plano de Contas */}
+              <div className="space-y-1.5">
+                <Label>Plano de Contas *</Label>
+                <PlanoContaSelect
+                  value={formData.plano_conta_id ? [formData.plano_conta_id] : []}
+                  onValueChange={(values) => handleInputChange("plano_conta_id", values[0] || "")}
+                  placeholder="Selecione a conta"
+                  tipoFiltro={formData.tipo === 'transferencia' ? undefined : formData.tipo}
+                />
+              </div>
+
+              {/* Centro de Custo */}
+              <div className="space-y-1.5">
+                <Label>Centro de Custo *</Label>
+                <CentroCustoSelect
+                  value={formData.centro_custo_id ? [formData.centro_custo_id] : []}
+                  onValueChange={(values) => handleInputChange("centro_custo_id", values[0] || "")}
+                  placeholder="Selecione o centro de custo"
+                />
+              </div>
+
+              {/* Valor */}
+              <div className="space-y-1.5">
+                <Label htmlFor="valor">Valor (R$) *</Label>
+                <Input
+                  id="valor"
+                  type="number"
+                  step="0.01"
+                  placeholder="0,00"
+                  value={formData.valor}
+                  onChange={(e) => handleInputChange("valor", e.target.value)}
+                />
+              </div>
             </div>
 
-            {/* Plano de Contas */}
-            <div className="space-y-2">
-              <Label>Plano de Contas *</Label>
-              <PlanoContaSelect
-                value={formData.plano_conta_id ? [formData.plano_conta_id] : []}
-                onValueChange={(values) => handleInputChange("plano_conta_id", values[0] || "")}
-                placeholder="Selecione a conta"
-                tipoFiltro={formData.tipo === 'transferencia' ? undefined : formData.tipo}
-              />
+            {/* Terceira linha: Cliente/Fornecedor, Caixa/Banco e Forma de Pagamento */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Cliente/Fornecedor */}
+              <div className="space-y-1.5">
+                <Label>
+                  {formData.tipo === "receita" ? "Cliente" : 
+                   formData.tipo === "despesa" ? "Fornecedor" : 
+                   "Cliente/Fornecedor"}
+                </Label>
+                <ClienteFornecedorSelect
+                  value={formData.cliente_fornecedor_id ? [formData.cliente_fornecedor_id] : []}
+                  onValueChange={(values) => handleInputChange("cliente_fornecedor_id", values[0] || "")}
+                  placeholder={
+                    formData.tipo === "receita" ? "Selecione cliente (opcional)" :
+                    formData.tipo === "despesa" ? "Selecione fornecedor (opcional)" :
+                    "Selecione cliente/fornecedor (opcional)"
+                  }
+                />
+              </div>
+
+              {/* Conta Bancária */}
+              <div className="space-y-1.5">
+                <ContaBancariaSelect
+                  value={formData.conta_bancaria_id ? [formData.conta_bancaria_id] : []}
+                  onValueChange={(values) => handleInputChange("conta_bancaria_id", values[0] || "")}
+                  placeholder="Selecione a conta"
+                  label="Caixa/Banco *"
+                />
+              </div>
+
+              {/* Forma de Pagamento */}
+              <div className="space-y-1.5">
+                <Label htmlFor="forma_pagamento_id">Forma de Pagamento</Label>
+                <Select value={formData.forma_pagamento_id} onValueChange={(value) => handleInputChange("forma_pagamento_id", value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhuma</SelectItem>
+                    {formasPagamento.map((forma) => (
+                      <SelectItem key={forma.id} value={forma.id}>
+                        {forma.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            {/* Centro de Custo */}
-            <div className="space-y-2">
-              <Label>Centro de Custo *</Label>
-              <CentroCustoSelect
-                value={formData.centro_custo_id ? [formData.centro_custo_id] : []}
-                onValueChange={(values) => handleInputChange("centro_custo_id", values[0] || "")}
-                placeholder="Selecione o centro de custo"
-              />
-            </div>
 
-            {/* Valor */}
-            <div className="space-y-2">
-              <Label htmlFor="valor">Valor (R$) *</Label>
-              <Input
-                id="valor"
-                type="number"
-                step="0.01"
-                placeholder="0,00"
-                value={formData.valor}
-                onChange={(e) => handleInputChange("valor", e.target.value)}
-              />
-            </div>
-
-            {/* Cliente/Fornecedor */}
-            <div className="space-y-2">
-              <Label>Cliente/Fornecedor</Label>
-              <ClienteFornecedorSelect
-                value={formData.cliente_fornecedor_id ? [formData.cliente_fornecedor_id] : []}
-                onValueChange={(values) => handleInputChange("cliente_fornecedor_id", values[0] || "")}
-                placeholder="Selecione cliente/fornecedor (opcional)"
-              />
-            </div>
-
-            {/* Conta Bancária */}
-            <div className="space-y-2">
-              <Label>Conta Bancária *</Label>
-              <ContaBancariaSelect
-                value={formData.conta_bancaria_id ? [formData.conta_bancaria_id] : []}
-                onValueChange={(values) => handleInputChange("conta_bancaria_id", values[0] || "")}
-                placeholder="Selecione a conta"
-              />
-            </div>
-
-            {/* Forma de Pagamento */}
-            <div className="space-y-2">
-              <Label htmlFor="forma_pagamento_id">Forma de Pagamento</Label>
-              <Select value={formData.forma_pagamento_id} onValueChange={(value) => handleInputChange("forma_pagamento_id", value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a forma de pagamento (opcional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Nenhuma</SelectItem>
-                  {formasPagamento.map((forma) => (
-                    <SelectItem key={forma.id} value={forma.id}>
-                      {forma.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
 
             {/* Descrição */}
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="descricao">Descrição *</Label>
               <Textarea
                 id="descricao"
@@ -1107,20 +1293,132 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
               />
             </div>
 
-            {/* Status */}
-            <div className="space-y-2">
-              <Label htmlFor="status">Status</Label>
-              <Select value={formData.status} onValueChange={(value) => handleInputChange("status", value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pendente">Pendente</SelectItem>
-                  <SelectItem value="pago">Pago</SelectItem>
-                  <SelectItem value="cancelado">Cancelado</SelectItem>
-                </SelectContent>
-              </Select>
+            {/* Checkbox para ativar/desativar recebimento */}
+            <div className="space-y-1.5">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="recebimento_realizado"
+                  checked={formData.recebimento_realizado}
+                  onChange={(e) => handleInputChange("recebimento_realizado", e.target.checked)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <Label htmlFor="recebimento_realizado" className="text-sm font-medium">
+                  {formData.tipo === "despesa" ? "Pagamento realizado" : "Recebimento realizado"}
+                </Label>
+              </div>
             </div>
+
+            {/* Campos de pagamento - só aparecem se recebimento estiver ativado */}
+            {formData.recebimento_realizado && (
+              <div className="bg-blue-50 p-4 rounded-lg space-y-4">
+                <h4 className="text-md font-semibold">Informações de Pagamento</h4>
+                
+                {/* Vencimento e Data de Pagamento */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Vencimento */}
+                  <div className="space-y-1.5">
+                    <Label>Vencimento</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {vencimentoDate ? format(vencimentoDate, "dd/MM/yyyy", { locale: ptBR }) : "dd/mm/aaaa"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar mode="single" selected={vencimentoDate} onSelect={setVencimentoDate} initialFocus />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
+                  {/* Data de Pagamento */}
+                  <div className="space-y-1.5">
+                    <Label>Data de Pagamento</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {dataPagamentoDate ? format(dataPagamentoDate, "dd/MM/yyyy", { locale: ptBR }) : "dd/mm/aaaa"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar mode="single" selected={dataPagamentoDate} onSelect={setDataPagamentoDate} initialFocus />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+
+                {/* Juros, Multa, Desconto e Valor Pago */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {/* Juros */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="juros">Juros (R$)</Label>
+                    <Input
+                      id="juros"
+                      type="number"
+                      step="0.01"
+                      placeholder="0,00"
+                      value={formData.juros}
+                      onChange={(e) => handleInputChange("juros", e.target.value)}
+                    />
+                  </div>
+
+                  {/* Multa */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="multa">Multa (R$)</Label>
+                    <Input
+                      id="multa"
+                      type="number"
+                      step="0.01"
+                      placeholder="0,00"
+                      value={formData.multa}
+                      onChange={(e) => handleInputChange("multa", e.target.value)}
+                    />
+                  </div>
+
+                  {/* Desconto */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="desconto">Desconto (R$)</Label>
+                    <Input
+                      id="desconto"
+                      type="number"
+                      step="0.01"
+                      placeholder="0,00"
+                      value={formData.desconto}
+                      onChange={(e) => handleInputChange("desconto", e.target.value)}
+                    />
+                  </div>
+
+                  {/* Valor Pago/Recebido */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="valor_pago">
+                      {formData.tipo === "receita" ? "Valor Recebido (R$)" : "Valor Pago (R$)"}
+                    </Label>
+                    <Input
+                      id="valor_pago"
+                      type="number"
+                      step="0.01"
+                      placeholder="0,00"
+                      value={formData.valor_pago}
+                      onChange={(e) => handleInputChange("valor_pago", e.target.value)}
+                      onFocus={() => {
+                        // Auto-calcular quando o campo receber foco
+                        const valorCalculado = calcularValorPago()
+                        handleInputChange("valor_pago", valorCalculado.toString())
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Status - Oculto, será definido automaticamente */}
+            <div className="hidden">
+              <input type="hidden" value={formData.status} />
+            </div>
+
+
           </>
         )}
 

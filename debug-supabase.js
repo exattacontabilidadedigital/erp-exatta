@@ -4,7 +4,7 @@ const { createClient } = require('@supabase/supabase-js')
 const fs = require('fs')
 const path = require('path')
 
-// Ler arquivo .env.local
+// Ler arquivo nv.local
 try {
   const envFile = fs.readFileSync('.env.local', 'utf8')
   const envVars = {}

@@ -33,10 +33,12 @@ export function ContasHeader({ onNovaConta, onImportarExtrato, onExportar }: Con
               <Download className="w-4 h-4 mr-2" />
               Exportar
             </Button>
-            <Button variant="outline" size="sm">
-              <FileText className="w-4 h-4 mr-2" />
-              Conciliação
-            </Button>
+            <Link href="/conciliacao">
+              <Button variant="outline" size="sm">
+                <FileText className="w-4 h-4 mr-2" />
+                Conciliação
+              </Button>
+            </Link>
             <Button variant="outline" size="sm">
               <Sync className="w-4 h-4 mr-2" />
               Sincronizar

@@ -3,14 +3,19 @@
 import { useState, useEffect, Suspense } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { useRouter, useSearchParams } from "next/navigation"
-import { DashboardHeader } from "@/components/dashboard/dashboard-header"
+
 import { ConciliacaoHeader } from "@/components/conciliacao"
-import { ConciliacaoModerna } from "@/components/conciliacao/conciliacao-moderna"
+import { ConciliacaoModernaV2 } from "@/components/conciliacao/conciliacao-moderna-v2"
 
 function ConciliacaoContent() {
   const { user, userData, empresaData, loading } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
+  
+  // Parâmetros da conta passados via URL
+  const contaId = searchParams.get('conta_id')
+  const contaNome = searchParams.get('conta_nome')
+  const banco = searchParams.get('banco')
 
   // Estado para período e conta selecionada
   const [periodo, setPeriodo] = useState<{ mes: string, ano: string }>(() => {
@@ -23,6 +28,8 @@ function ConciliacaoContent() {
     const contaId = searchParams.get('conta_id');
     return contaId ? { id: contaId } : null;
   });
+
+  const [contasBancarias, setContasBancarias] = useState<any[]>([]);
 
   // Estado para lançamentos importados (usado pelo header)
   const [lancamentosImportados, setLancamentosImportados] = useState<Array<{
@@ -39,6 +46,16 @@ function ConciliacaoContent() {
       router.push("/login")
     }
   }, [user, loading, router])
+
+  // Definir conta selecionada automaticamente se passada via URL
+  useEffect(() => {
+    if (contaId && contasBancarias.length > 0) {
+      const contaEncontrada = contasBancarias.find(conta => conta.id === contaId)
+      if (contaEncontrada) {
+        setContaSelecionada(contaEncontrada)
+      }
+    }
+  }, [contaId, contasBancarias])
 
   if (loading) {
     return (
@@ -62,7 +79,6 @@ function ConciliacaoContent() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <DashboardHeader />
       <main className="container mx-auto px-4 py-6">
         <ConciliacaoHeader
           periodo={periodo}
@@ -74,11 +90,9 @@ function ConciliacaoContent() {
         
         {contaSelecionada && (
           <div className="mt-6">
-            <ConciliacaoModerna
-              bankAccountId={contaSelecionada.id}
-              period={{ start: periodStart, end: periodEnd }}
-              hideHeader={true}
-              hideUpload={true}
+            <ConciliacaoModernaV2 
+              preSelectedBankAccountId={contaId || undefined}
+              preSelectedBankAccountName={contaNome || undefined}
             />
           </div>
         )}
