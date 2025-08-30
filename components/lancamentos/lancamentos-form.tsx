@@ -100,18 +100,22 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
     if (initialData) {
       console.log("Carregando dados iniciais para edição:", initialData)
       
-      // Detectar se é uma transferência baseado no número do documento
-      const isTransferencia = initialData.numero_documento?.includes('TRANSF-') && 
-                             (initialData.numero_documento.includes('-ENTRADA') || 
-                              initialData.numero_documento.includes('-SAIDA'))
+      // Detectar se é uma transferência EXISTENTE baseado no número do documento
+      const isTransferenciaExistente = initialData.numero_documento?.includes('TRANSF-') && 
+                                      (initialData.numero_documento.includes('-ENTRADA') || 
+                                       initialData.numero_documento.includes('-SAIDA'))
       
-      console.log("É transferência?", isTransferencia)
+      // Detectar se é uma transferência NOVA (da conciliação)
+      const isTransferenciaNova = initialData.tipo === 'transferencia' && initialData.id === ''
       
-      if (isTransferencia) {
-        // Se é transferência, buscar o lançamento complementar para obter conta origem/destino
+      console.log("É transferência existente?", isTransferenciaExistente)
+      console.log("É transferência nova?", isTransferenciaNova)
+      
+      if (isTransferenciaExistente) {
+        // Se é transferência existente, buscar o lançamento complementar para obter conta origem/destino
         buscarLancamentoComplementar(initialData)
       } else {
-        // Lançamento normal
+        // Lançamento normal ou transferência nova
         setFormData({
           tipo: initialData.tipo,
           numero_documento: initialData.numero_documento,

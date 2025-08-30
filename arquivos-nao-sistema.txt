@@ -1,0 +1,68 @@
+Arquivos que não fazem parte do sistema principal (erp-exatta):
+
+# Documentação (.md)
+README.md
+README-DADOS-TESTE.md
+INDICADORES_VISUAIS_RECEITAS_DESPESAS.md
+IMPLEMENTACAO_BUSCA_CONTAS_LANCAMENTOS.md
+IDENTIFICAR_PROBLEMA_FITID.md
+LOGICA_TRANSFERENCIAS_CONCILIACAO.md
+GUIA_TESTE_UPLOAD.md
+FUNCIONALIDADES_BUSCAR_IGNORAR.md
+FILTRO_PLANO_CONTAS_POR_TIPO.md
+REGRA_CONTAS_SINTETICAS_ANALITICAS.md
+CORRECAO_TAGS_RECEITA_DESPESA.md
+CORRECAO_LOGICA_CONCILIACAO_BANCARIA.md
+TRANSFORMACAO_ANALITICA_SINTETICA.md
+TESTE_CORRECAO_BANCO.md
+SOLUCAO_PROBLEMA_OFX.md
+SOLUCAO_FINAL_COMPLETA.md
+SOLUCAO_CONCILIACAO_RLS.md
+SOLUCAO-CONCILIACAO.md
+MOTOR_MATCHING_DOCUMENTACAO.md
+BUSCAR_EXISTENTE_FULLSCREEN_IMPLEMENTADO.md
+COMPONENTE_CONTA_BANCARIA_SELECT.md
+COMPONENTE_PLANO_CONTA_SELECT.md
+CONCILIACAO_BANCARIA_MODERNA.md
+REVISAO_FUNCIONALIDADE_BOTAO_OFX.md
+
+# Exemplos/Testes/Debug
+exemplo-extrato-agosto.ofx
+extrato-real-teste.ofx
+teste-completo-ofx.mjs
+teste-definitivo-ofx.mjs
+teste-funcionalidade-ofx.mjs
+teste-simples-conectividade.mjs
+debug-consulta-exata.mjs
+debug-empresa-rls.mjs
+debug-lancamentos.js
+debug-upload-detailed.mjs
+debug-upload-ofx.mjs
+demo-botao-ofx.mjs
+diagnostico-completo-ofx.mjs
+diagnostico-ofx-real.mjs
+inserir-lancamentos.mjs
+instrucoes-finais.mjs
+sistema-completo-sucesso.mjs
+solucao-ofx.mjs
+sucesso-total-ofx.mjs
+test-api-corrigida.mjs
+test-api-direct.js
+test-api-http-final.mjs
+test-api-logic.mjs
+test-api.html
+test-auth.mjs
+test-importacao-ofx.mjs
+test-query-fix.mjs
+test-service-role.mjs
+test-simple-api.html
+test-supabase-direto.mjs
+test-tree-import.js
+testar-reconciliation-sessions.mjs
+teste-botao-ofx.mjs
+
+# SQL avulsos/temporários
+(arquivos de limpeza, migração, exemplo, etc)
+
+# Observação
+Esta lista foi gerada automaticamente. Recomenda-se revisar manualmente antes de excluir ou arquivar qualquer arquivo.

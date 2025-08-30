@@ -140,7 +140,7 @@ export class OFXParserEnhanced {
     const transactions: OFXTransaction[] = [];
     
     // Regex para encontrar blocos de transações
-    const transactionRegex = /<STMTTRN>(.*?)<\/STMTTRN>/gis;
+    const transactionRegex = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/g;
     let match;
 
     while ((match = transactionRegex.exec(content)) !== null) {
@@ -244,6 +244,128 @@ export class OFXParserEnhanced {
     } catch (error) {
       console.log('❌ Erro ao validar arquivo OFX:', error);
       return { valid: false, error: 'Erro ao validar arquivo OFX' };
+    }
+  }
+
+  /**
+   * Valida se o OFX pertence à conta bancária selecionada
+   */
+  static async validateAccountMatch(
+    ofxContent: string, 
+    accountId: string, 
+    supabaseClient: any
+  ): Promise<{ valid: boolean; error?: string; accountInfo?: any }> {
+    try {
+      console.log('🔍 Validando correspondência do OFX com a conta selecionada...');
+      
+      // Extrair dados da conta do OFX
+      const normalizedContent = ofxContent
+        .replace(/\n|\r/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const ofxBankId = this.extractValue(normalizedContent, 'BANKID') || '';
+      const ofxAccountId = this.extractValue(normalizedContent, 'ACCTID') || '';
+      
+      console.log('📋 Dados do OFX:', { ofxBankId, ofxAccountId });
+
+      if (!ofxBankId || !ofxAccountId) {
+        return { 
+          valid: false, 
+          error: 'Dados da conta não encontrados no arquivo OFX'
+        };
+      }
+
+      // Buscar dados da conta bancária selecionada
+      const { data: contaData, error: contaError } = await supabaseClient
+        .from('contas_bancarias')
+        .select(`
+          id,
+          agencia,
+          conta,
+          digito,
+          bancos!inner (
+            codigo,
+            nome
+          )
+        `)
+        .eq('id', accountId)
+        .single();
+
+      if (contaError || !contaData) {
+        return { 
+          valid: false, 
+          error: 'Conta bancária não encontrada no sistema'
+        };
+      }
+
+      console.log('📋 Dados da conta do sistema:', contaData);
+
+      // Validar correspondência do banco
+      const bankMatches = contaData.bancos.codigo === ofxBankId || 
+                         contaData.bancos.codigo.padStart(3, '0') === ofxBankId.padStart(3, '0');
+
+      if (!bankMatches) {
+        return {
+          valid: false,
+          error: `Banco do OFX (${ofxBankId}) não corresponde ao banco da conta selecionada (${contaData.bancos.codigo} - ${contaData.bancos.nome})`,
+          accountInfo: {
+            ofx: { bankId: ofxBankId, accountId: ofxAccountId },
+            system: { 
+              bankCode: contaData.bancos.codigo, 
+              bankName: contaData.bancos.nome,
+              agencia: contaData.agencia,
+              conta: contaData.conta,
+              digito: contaData.digito
+            }
+          }
+        };
+      }
+
+      // Validar correspondência da conta (número da conta com possível dígito)
+      const systemAccount = contaData.conta + (contaData.digito ? contaData.digito : '');
+      const accountMatches = systemAccount === ofxAccountId || 
+                           contaData.conta === ofxAccountId ||
+                           systemAccount.replace(/[^0-9]/g, '') === ofxAccountId.replace(/[^0-9]/g, '');
+
+      if (!accountMatches) {
+        return {
+          valid: false,
+          error: `Conta do OFX (${ofxAccountId}) não corresponde à conta selecionada (${systemAccount})`,
+          accountInfo: {
+            ofx: { bankId: ofxBankId, accountId: ofxAccountId },
+            system: { 
+              bankCode: contaData.bancos.codigo, 
+              bankName: contaData.bancos.nome,
+              agencia: contaData.agencia,
+              conta: contaData.conta,
+              digito: contaData.digito
+            }
+          }
+        };
+      }
+
+      console.log('✅ OFX corresponde à conta selecionada');
+      return { 
+        valid: true,
+        accountInfo: {
+          ofx: { bankId: ofxBankId, accountId: ofxAccountId },
+          system: { 
+            bankCode: contaData.bancos.codigo, 
+            bankName: contaData.bancos.nome,
+            agencia: contaData.agencia,
+            conta: contaData.conta,
+            digito: contaData.digito
+          }
+        }
+      };
+
+    } catch (error) {
+      console.error('❌ Erro ao validar correspondência da conta:', error);
+      return { 
+        valid: false, 
+        error: 'Erro interno ao validar correspondência da conta'
+      };
     }
   }
 

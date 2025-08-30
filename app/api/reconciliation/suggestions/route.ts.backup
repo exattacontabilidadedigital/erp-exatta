@@ -2,7 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import { MatchingEngine, MatchingRule } from '@/lib/matching-engine';
 
-// Regras padrão para quando não há regras configuradas no banco
+//    // Criar resultados para TODAS as transações bancárias, preservando status existentes
+    console.log('🔄 Criando resultados completos preservando status existentes...');
+    const allResults = bankTransactions?.map((bankTransaction: any) => {gras padrão para quando não há regras configuradas no banco
 function getDefaultMatchingRules(): MatchingRule[] {
   return [
     {
@@ -53,14 +55,14 @@ export async function GET(request: NextRequest) {
 
     console.log('📊 Parâmetros:', { bankAccountId, periodStart, periodEnd, empresaId });
 
-    // Buscar transações bancárias não conciliadas
+    // Buscar todas as transações bancárias do período (incluindo já conciliadas)
     console.log('🔍 Buscando transações bancárias...');
     const { data: bankTransactions, error: bankError } = await supabase
       .from('bank_transactions')
       .select('*')
       .eq('bank_account_id', bankAccountId)
       .eq('empresa_id', empresaId)
-      .eq('reconciliation_status', 'pending')
+      .in('reconciliation_status', ['pending', 'reconciled', 'no_match'])
       .gte('posted_at', periodStart)
       .lte('posted_at', periodEnd)
       .order('posted_at', { ascending: false });
@@ -156,33 +158,73 @@ export async function GET(request: NextRequest) {
       console.log(`   - ${rule.nome} (${rule.tipo}) - Peso: ${rule.peso}`);
     });
 
-    // Executar algoritmo de matching
-    console.log('🔍 Iniciando algoritmo de matching na API...');
-    console.log('📊 Dados para matching:', {
-      bankTransactionsCount: bankTransactions?.length || 0,
-      systemTransactionsCount: systemTransactions?.length || 0,
-      sampleBankTxn: bankTransactions?.[0],
-      sampleSystemTxn: systemTransactions?.[0]
+    // Executar algoritmo de matching APENAS para transações realmente pendentes
+    console.log('🔍 Preparando dados para processamento...');
+    
+    // Separar transações que já têm status definido das que precisam de matching
+    const transactionsNeedingMatching = bankTransactions?.filter((bt: any) => 
+      bt.reconciliation_status === 'pending' && !existingMatchesMap.has(bt.id)
+    ) || [];
+    
+    console.log('📊 Análise de transações:', {
+      totalBankTransactions: bankTransactions?.length || 0,
+      transactionsNeedingMatching: transactionsNeedingMatching.length,
+      existingMatches: existingMatches?.length || 0
     });
 
-    const matchingEngine = new MatchingEngine(matchingRules || []);
-    
-    const matchResults = await matchingEngine.processMatching(
-      bankTransactions || [],
-      systemTransactions || []
-    );
-    
-    console.log(`✅ Matching API concluído: ${matchResults.length} resultados`);
-    console.log('📋 Sample result:', matchResults[0]);
+    let matchResults: any[] = [];
 
-    // Atualizar status baseado em matches existentes
-    console.log('🔄 Aplicando status de matches existentes...');
-    matchResults.forEach((result: any) => {
+    // Processar matching apenas para transações pendentes sem matches
+    if (transactionsNeedingMatching.length > 0) {
+      console.log('🎯 Executando matching para transações pendentes...');
+      const matchingEngine = new MatchingEngine(matchingRules || []);
+      
+      const pendingMatchResults = await matchingEngine.processMatching(
+        transactionsNeedingMatching,
+        systemTransactions || []
+      );
+      
+      console.log(`✅ Matching concluído para ${pendingMatchResults.length} transações pendentes`);
+      matchResults.push(...pendingMatchResults);
+    }
+
+    // Criar resultados para TODAS as transações bancárias, preservando status existentes
+    console.log('� Criando resultados completos preservando status existentes...');
+    const allResults = bankTransactions?.map(bankTransaction => {
+      // Verificar se esta transação foi processada no matching
+      const matchResult = matchResults.find(mr => mr.bankTransaction.id === bankTransaction.id);
+      
+      if (matchResult) {
+        // Usar resultado do matching para transações pendentes
+        return matchResult;
+      } else {
+        // Criar resultado baseado no status atual da transação
+        return {
+          bankTransaction,
+          systemTransaction: null,
+          systemTransactions: [],
+          status: 'pendente', // Será atualizado na próxima etapa
+          matchScore: 0,
+          matchReason: 'Status preservado do banco de dados',
+          confidenceLevel: 'baixo',
+          matchType: 'preserved'
+        };
+      }
+    }) || [];
+
+    console.log(`✅ Resultados completos criados: ${allResults.length} transações`);
+
+    // Atualizar status baseado em matches existentes e reconciliation_status
+    console.log('🔄 Aplicando status de matches existentes e do banco...');
+    allResults.forEach((result: any) => {
       const existingMatch = existingMatchesMap.get(result.bankTransaction.id);
+      const bankTransactionStatus = result.bankTransaction.reconciliation_status;
+      
       if (existingMatch) {
         console.log(`📌 Match existente encontrado para transação ${result.bankTransaction.id}:`, {
           status: existingMatch.status,
-          confidence: existingMatch.confidence_level
+          confidence: existingMatch.confidence_level,
+          bankStatus: bankTransactionStatus
         });
         
         // Atualizar status baseado no match existente
@@ -197,6 +239,38 @@ export async function GET(request: NextRequest) {
         // Também atualizar outras propriedades relevantes
         result.matchScore = Math.round((existingMatch.match_score || 0) * 100);
         result.confidenceLevel = existingMatch.confidence_level || result.confidenceLevel;
+        
+        // Se há match confirmado, garantir que existe systemTransaction
+        if (existingMatch.status === 'confirmed' && existingMatch.system_transaction_id) {
+          // Buscar a systemTransaction se não estiver presente
+          if (!result.systemTransaction) {
+            const systemTxn = systemTransactions?.find((st: any) => st.id === existingMatch.system_transaction_id);
+            if (systemTxn) {
+              result.systemTransaction = systemTxn;
+            }
+          }
+        }
+      } else if (bankTransactionStatus === 'reconciled') {
+        // Se não há match mas o status é reconciled, marcar como conciliado
+        console.log(`📌 Transação bancária já marcada como reconciled: ${result.bankTransaction.id}`);
+        result.status = 'conciliado';
+        result.matchScore = 100;
+        result.confidenceLevel = '100%';
+        
+        // Se há matched_lancamento_id, buscar o lançamento correspondente
+        if (result.bankTransaction.matched_lancamento_id) {
+          const systemTxn = systemTransactions?.find((st: any) => st.id === result.bankTransaction.matched_lancamento_id);
+          if (systemTxn) {
+            result.systemTransaction = systemTxn;
+            console.log(`🔗 Lançamento correspondente encontrado para transação reconciled: ${systemTxn.id}`);
+          }
+        }
+      } else if (bankTransactionStatus === 'no_match') {
+        // Se marcada como sem correspondência
+        console.log(`📌 Transação bancária marcada como sem correspondência: ${result.bankTransaction.id}`);
+        result.status = 'sem_match';
+        result.matchScore = 0;
+        result.confidenceLevel = 'baixo';
       } else {
         // Se não há match existente, verificar se é uma transferência desconciliada
         const isTransfer = result.bankTransaction?.memo?.toUpperCase().includes('TRANSFER') || 
@@ -317,14 +391,9 @@ export async function GET(request: NextRequest) {
     console.log('✅ Sugestões geradas com sucesso');
 
     // Converter matchResults para o formato esperado pelo frontend (pairs)
-    const formattedPairs = matchResults.map((result, index) => {
-      // Gerar ID único para cada pair combinando bank_transaction_id + system_transaction_id + index
-      const uniqueId = result.systemTransaction 
-        ? `${result.bankTransaction.id}_${result.systemTransaction.id}`
-        : `${result.bankTransaction.id}_no_match_${index}`;
-      
+    const formattedPairs = matchResults.map(result => {
       return {
-        id: uniqueId,
+        id: result.bankTransaction.id,
         bankTransaction: result.bankTransaction,
         systemTransaction: result.systemTransaction || null,
         systemTransactions: result.systemTransactions || [],

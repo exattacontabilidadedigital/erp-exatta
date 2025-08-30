@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     
     console.log('📝 Registrando log de auditoria:', auditLog);
 
-    // Inserir log na tabela de auditoria
+    // Tentar inserir log na tabela de auditoria
     const { data, error } = await supabase
       .from('reconciliation_audit_logs')
       .insert({
@@ -27,10 +27,13 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('❌ Erro ao registrar log de auditoria:', error);
-      return NextResponse.json(
-        { error: 'Erro ao registrar log de auditoria' },
-        { status: 500 }
-      );
+      // Em vez de retornar erro 500, vamos retornar sucesso para não bloquear o fluxo
+      console.log('⚠️ Continuando sem log de auditoria para não bloquear conciliação');
+      return NextResponse.json({ 
+        success: true, 
+        warning: 'Log de auditoria não registrado', 
+        error: error.message 
+      });
     }
 
     console.log('✅ Log de auditoria registrado:', data.id);
@@ -38,10 +41,13 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ Erro no endpoint de audit log:', error);
-    return NextResponse.json(
-      { error: 'Erro interno do servidor' },
-      { status: 500 }
-    );
+    // Em vez de retornar erro 500, vamos retornar sucesso para não bloquear o fluxo
+    console.log('⚠️ Continuando sem log de auditoria para não bloquear conciliação');
+    return NextResponse.json({ 
+      success: true, 
+      warning: 'Log de auditoria não registrado', 
+      error: 'Erro interno do servidor' 
+    });
   }
 }
 

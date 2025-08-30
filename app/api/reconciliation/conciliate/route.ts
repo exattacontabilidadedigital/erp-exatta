@@ -22,6 +22,34 @@ export async function POST(request: NextRequest) {
       rule_applied
     });
 
+    // Se não há system_transaction_id, é uma transação "sem correspondência"
+    if (!system_transaction_id) {
+      console.log('🚫 Marcando transação como sem correspondência');
+      
+      // Apenas atualizar status da transação bancária
+      const { error: updateError } = await supabase
+        .from('bank_transactions')
+        .update({ 
+          reconciliation_status: 'no_match',
+          matched_lancamento_id: null,
+          match_confidence: 'sem_match'
+        })
+        .eq('id', bank_transaction_id);
+
+      if (updateError) {
+        console.error('❌ Erro ao atualizar transação bancária:', updateError);
+        return NextResponse.json(
+          { error: 'Erro ao marcar transação como sem correspondência' },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Transação marcada como sem correspondência' 
+      });
+    }
+
     // Verificar se já existe um match para esta transação bancária
     const { data: existingMatch } = await supabase
       .from('transaction_matches')

@@ -41,6 +41,13 @@ function ConciliacaoContent() {
     status: "pendente" | "conciliado" | "ignorado";
   }>>([]);
 
+  console.log('📄 ConciliacaoContent inicializada com parâmetros URL:', {
+    contaId,
+    contaNome,
+    banco,
+    contaSelecionada: !!contaSelecionada
+  });
+
   useEffect(() => {
     if (!loading && !user) {
       router.push("/login")
@@ -49,10 +56,20 @@ function ConciliacaoContent() {
 
   // Definir conta selecionada automaticamente se passada via URL
   useEffect(() => {
+    console.log('🔄 useEffect conta selecionada:', {
+      contaId,
+      contasBancariasLength: contasBancarias.length,
+      contasBancarias: contasBancarias.map(c => ({ id: c.id, nome: c.nome }))
+    });
+
     if (contaId && contasBancarias.length > 0) {
       const contaEncontrada = contasBancarias.find(conta => conta.id === contaId)
+      console.log('🔍 Conta encontrada:', contaEncontrada);
       if (contaEncontrada) {
         setContaSelecionada(contaEncontrada)
+        console.log('✅ Conta selecionada automaticamente:', contaEncontrada.nome);
+      } else {
+        console.log('❌ Conta não encontrada no array de contas bancárias');
       }
     }
   }, [contaId, contasBancarias])

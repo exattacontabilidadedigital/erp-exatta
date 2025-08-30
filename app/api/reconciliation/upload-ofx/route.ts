@@ -95,6 +95,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validar se o OFX pertence à conta selecionada
+    const accountValidation = await OFXParserEnhanced.validateAccountMatch(
+      fileContent,
+      bankAccountId,
+      supabase
+    );
+    
+    console.log('🏦 Validação de conta:', accountValidation);
+    
+    if (!accountValidation.valid) {
+      return NextResponse.json(
+        { 
+          error: accountValidation.error,
+          accountInfo: accountValidation.accountInfo
+        },
+        { status: 400 }
+      );
+    }
+
     // Parse do arquivo OFX
     console.log('🔄 Iniciando parsing para banco de dados...');
     const parsedData = OFXParserEnhanced.parseForDatabase(
