@@ -30,9 +30,10 @@ export async function POST(request: NextRequest) {
       const { error: updateError } = await supabase
         .from('bank_transactions')
         .update({ 
-          reconciliation_status: 'no_match',
+          reconciliation_status: 'ignored',
+          status_conciliacao: 'ignorado',
           matched_lancamento_id: null,
-          match_confidence: 'sem_match'
+          match_confidence: null
         })
         .eq('id', bank_transaction_id);
 
@@ -50,11 +51,12 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Verificar se já existe um match para esta transação bancária
+    // Verificar se já existe um match para esta combinação específica
     const { data: existingMatch } = await supabase
       .from('transaction_matches')
       .select('*')
       .eq('bank_transaction_id', bank_transaction_id)
+      .eq('system_transaction_id', system_transaction_id)
       .single();
 
     if (existingMatch) {
@@ -66,7 +68,7 @@ export async function POST(request: NextRequest) {
           match_score: confidence_level === '100%' ? 1.0 : 
                       confidence_level === 'provavel' ? 0.8 : 0.5,
           match_type: confidence_level === 'manual' ? 'manual' : 'automatic',
-          confidence_level,
+          confidence_level: 'high',
           status: 'confirmed',
           notes: `Conciliação ${confidence_level} - Regra: ${rule_applied}`
         })
@@ -93,7 +95,7 @@ export async function POST(request: NextRequest) {
           match_score: confidence_level === '100%' ? 1.0 : 
                       confidence_level === 'provavel' ? 0.8 : 0.5,
           match_type: confidence_level === 'manual' ? 'manual' : 'automatic',
-          confidence_level,
+          confidence_level: 'high',
           status: 'confirmed',
           notes: `Conciliação ${confidence_level} - Regra: ${rule_applied}`
         })
@@ -112,18 +114,30 @@ export async function POST(request: NextRequest) {
     }
 
     // Atualizar status da transação bancária
+    // reconciliation_status: 'matched' = conciliada, 'pending' = pendente, 'ignored' = sem correspondência
+    const confidenceValue = confidence_level === '100%' ? 1.0 : 
+                            confidence_level === 'high' ? 0.9 :
+                            confidence_level === 'provavel' ? 0.8 : 
+                            confidence_level === 'manual' ? 1.0 : 0.5;
+    
     const { error: updateError } = await supabase
       .from('bank_transactions')
       .update({ 
-        reconciliation_status: 'reconciled',
+        reconciliation_status: 'matched',
+        status_conciliacao: 'conciliado',
         matched_lancamento_id: system_transaction_id,
-        match_confidence: confidence_level
+        match_confidence: confidenceValue
       })
       .eq('id', bank_transaction_id);
 
     if (updateError) {
       console.error('❌ Erro ao atualizar transação bancária:', updateError);
     }
+
+    // Atualizar status_conciliacao da transação do sistema
+    // Nota: A tabela 'lancamentos' não possui campo específico para status de conciliação
+    // O status de conciliação é gerenciado pela tabela 'bank_transactions' e 'transaction_matches'
+    console.log('✅ Status do sistema será gerenciado via transaction_matches');
 
     return NextResponse.json({ 
       success: true, 

@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
     const periodStart = searchParams.get('period_start');
     const periodEnd = searchParams.get('period_end');
     const empresaId = searchParams.get('empresa_id');
+    const includeReconciled = searchParams.get('include_reconciled') === 'true';
 
     if (!bankAccountId || !periodStart || !periodEnd || !empresaId) {
       return NextResponse.json(
@@ -51,18 +52,27 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log('📊 Parâmetros:', { bankAccountId, periodStart, periodEnd, empresaId });
+    console.log('📊 Parâmetros:', { bankAccountId, periodStart, periodEnd, empresaId, includeReconciled });
 
-    // Buscar transações bancárias não conciliadas
+    // Buscar transações bancárias (com ou sem conciliadas)
     console.log('🔍 Buscando transações bancárias...');
-    const { data: bankTransactions, error: bankError } = await supabase
+    let query = supabase
       .from('bank_transactions')
       .select('*')
       .eq('bank_account_id', bankAccountId)
       .eq('empresa_id', empresaId)
-      .eq('reconciliation_status', 'pending')
       .gte('posted_at', periodStart)
-      .lte('posted_at', periodEnd)
+      .lte('posted_at', periodEnd);
+
+    // Se includeReconciled for false, filtrar apenas pending
+    // Se for true, incluir pending, matched e ignored
+    if (includeReconciled) {
+      query = query.in('reconciliation_status', ['pending', 'matched', 'ignored']);
+    } else {
+      query = query.eq('reconciliation_status', 'pending');
+    }
+
+    const { data: bankTransactions, error: bankError } = await query
       .order('posted_at', { ascending: false });
 
     if (bankError) {

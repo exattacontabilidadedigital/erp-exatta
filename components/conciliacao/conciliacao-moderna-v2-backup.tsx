@@ -143,19 +143,8 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
 
   // Estados para período
   const [periodo, setPeriodo] = useState<{ mes: string, ano: string }>(() => {
-    // Usar sempre o mês e ano atual como padrão
-    const hoje = new Date();
-    const mesAtual = (hoje.getMonth() + 1).toString().padStart(2, '0');
-    const anoAtual = hoje.getFullYear().toString();
-    
-    console.log('📅 Inicializando período (NOVA VERSÃO):', { 
-      hoje: hoje.toISOString(), 
-      mesAtual, 
-      anoAtual,
-      dataCompleta: `${anoAtual}-${mesAtual}`
-    });
-    
-    return { mes: mesAtual, ano: anoAtual };
+    // Usar agosto de 2025 para mostrar os dados OFX reais disponíveis
+    return { mes: "08", ano: "2025" };
   });
 
   // Função para gerar lista de anos (últimos 5 anos + próximos 2 anos)
@@ -186,36 +175,10 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
 
   // Função para alterar período e recarregar dados
   const handlePeriodoChange = useCallback((novoMes: string, novoAno: string) => {
-    console.log('🔄 handlePeriodoChange chamado:', { 
-      novoMes, 
-      novoAno,
-      periodoAnterior: periodo,
-      timestamp: new Date().toISOString()
-    });
-    
     setPeriodo({ mes: novoMes, ano: novoAno });
-    
-    // Atualizar filtros de data automaticamente para o novo período
-    const periodStart = `${novoAno}-${novoMes.padStart(2, '0')}-01`;
-    const lastDay = new Date(Number(novoAno), Number(novoMes), 0).getDate();
-    const periodEnd = `${novoAno}-${novoMes.padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
-    
-    console.log('📅 Novo período calculado:', {
-      novoMes,
-      novoAno,
-      periodStart,
-      periodEnd,
-      lastDay
-    });
-    
-    setDataInicio(periodStart);
-    setDataFim(periodEnd);
-    
     // Limpar dados atuais para forçar recarregamento
     setPairs([]);
     setSummary(null);
-    
-    console.log('✅ Estado limpo, useEffect deve disparar automaticamente');
     // Recarregar dados com novo período será feito automaticamente pelo useEffect
   }, []);
 
@@ -229,17 +192,6 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
   const [dataInicio, setDataInicio] = useState<string>('');
   const [dataFim, setDataFim] = useState<string>('');
   const [usarFiltroPeriodo, setUsarFiltroPeriodo] = useState<boolean>(false);
-
-  // Estados adicionais para filtros
-  const [filtroStatus, setFiltroStatus] = useState({
-    sugeridos: true,
-    conciliados: true,
-    pendentes: true,
-    transferencias: true
-  });
-  const [valorMinimo, setValorMinimo] = useState<string>('');
-  const [valorMaximo, setValorMaximo] = useState<string>('');
-  const [termoBusca, setTermoBusca] = useState<string>('');
 
   // Função para validar e definir data de início
   const handleDataInicioChange = (novaData: string) => {
@@ -258,47 +210,6 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
       setDataInicio(novaData);
     }
   };
-
-  // Funções para filtros
-  const aplicarFiltros = useCallback(() => {
-    console.log('🔍 Aplicando filtros:', {
-      usarFiltroPeriodo,
-      dataInicio,
-      dataFim,
-      filtroStatus,
-      valorMinimo,
-      valorMaximo,
-      termoBusca
-    });
-    
-    // A lógica de filtros será aplicada automaticamente pelos useEffect
-    // que monitoram essas variáveis de estado
-    toast({
-      title: "Filtros Aplicados",
-      description: "Os filtros foram aplicados aos dados de conciliação",
-    });
-  }, [usarFiltroPeriodo, dataInicio, dataFim, filtroStatus, valorMinimo, valorMaximo, termoBusca, toast]);
-
-  const limparFiltros = useCallback(() => {
-    console.log('🧹 Limpando todos os filtros...');
-    setUsarFiltroPeriodo(false);
-    setDataInicio('');
-    setDataFim('');
-    setFiltroStatus({
-      sugeridos: true,
-      conciliados: true,
-      pendentes: true,
-      transferencias: true
-    });
-    setValorMinimo('');
-    setValorMaximo('');
-    setTermoBusca('');
-    
-    toast({
-      title: "Filtros Limpos",
-      description: "Todos os filtros foram removidos",
-    });
-  }, [toast]);
 
   // Estados para upload
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -409,17 +320,16 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
 
   // Carregar sugestões de conciliação
   const loadSuggestions = useCallback(async () => {
-    console.log('🚀 loadSuggestions iniciado (v5.0):', {
+    console.log('🚀 loadSuggestions iniciado (v4.0):', {
       selectedBankAccountId,
       empresaData,
       periodo,
       hasSelectedAccount: !!selectedBankAccountId,
-      hasEmpresaData: !!empresaData?.id,
-      timestampLoad: new Date().toISOString()
+      hasEmpresaData: !!empresaData?.id
     });
 
     if (!selectedBankAccountId || !empresaData?.id) {
-      console.warn('⚠️ Dados insuficientes para carregar sugestões (v5.0):', {
+      console.warn('⚠️ Dados insuficientes para carregar sugestões (v4.0):', {
         selectedBankAccountId: !!selectedBankAccountId,
         empresaId: !!empresaData?.id
       });
@@ -432,8 +342,6 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
       const periodStart = `${periodo.ano}-${periodo.mes.padStart(2, '0')}-01`;
       const lastDay = new Date(Number(periodo.ano), Number(periodo.mes), 0).getDate();
       const periodEnd = `${periodo.ano}-${periodo.mes.padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
-
-      console.log('📊 PERÍODO USADO NA API:', { periodo, periodStart, periodEnd });
 
       const url = `/api/reconciliation/suggestions?bank_account_id=${selectedBankAccountId}&period_start=${periodStart}&period_end=${periodEnd}&empresa_id=${empresaData.id}&include_reconciled=${includeReconciled}`;
       console.log('📡 Fazendo requisição para:', url);
@@ -722,27 +630,11 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
   const searchFilteredPairs = filteredPairs.filter(pair => {
     if (!searchTerm) return true;
     const searchLower = searchTerm.toLowerCase();
-    
-    // Busca por texto (descrição, memo, beneficiário)
-    const textMatch = (
+    return (
       pair.bankTransaction?.memo.toLowerCase().includes(searchLower) ||
       pair.systemTransaction?.descricao.toLowerCase().includes(searchLower) ||
       pair.bankTransaction?.payee?.toLowerCase().includes(searchLower)
     );
-    
-    // Busca por valor (permite buscar valor exato ou parcial)
-    const valueMatch = (
-      pair.bankTransaction?.amount.toString().includes(searchTerm) ||
-      pair.systemTransaction?.valor.toString().includes(searchTerm) ||
-      // Busca por valor formatado (com vírgula como decimal)
-      pair.bankTransaction?.amount.toFixed(2).replace('.', ',').includes(searchTerm) ||
-      pair.systemTransaction?.valor.toFixed(2).replace('.', ',').includes(searchTerm) ||
-      // Busca por valor absoluto (sem considerar sinal negativo)
-      Math.abs(pair.bankTransaction?.amount || 0).toString().includes(searchTerm) ||
-      Math.abs(pair.systemTransaction?.valor || 0).toString().includes(searchTerm)
-    );
-    
-    return textMatch || valueMatch;
   });
 
   // Log para debug dos filtros
@@ -1552,20 +1444,430 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
     }
   }, [selectedBankAccountId, periodo, loadSuggestions]);
 
-  // Inicializar e atualizar filtros de data baseado no período
-  useEffect(() => {
-    const periodStart = `${periodo.ano}-${periodo.mes.padStart(2, '0')}-01`;
-    const lastDay = new Date(Number(periodo.ano), Number(periodo.mes), 0).getDate();
-    const periodEnd = `${periodo.ano}-${periodo.mes.padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
-    
-    setDataInicio(periodStart);
-    setDataFim(periodEnd);
-    
-    console.log('📅 Filtros de data atualizados para:', { periodStart, periodEnd, periodo });
-  }, [periodo]); // Executar sempre que o período mudar
-
   return (
     <div className={`space-y-6 ${className || ''}`}>
+
+      {/* Resumo da Conciliação */}
+      {summary && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Resumo da Conciliação</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">{summary.total}</div>
+                <div className="text-sm text-gray-600">Total</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">{summary.conciliados}</div>
+                <div className="text-sm text-gray-600">Conciliados</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-orange-600">{summary.sugeridos}</div>
+                <div className="text-sm text-gray-600">Sugeridos</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">{summary.transferencias}</div>
+                <div className="text-sm text-gray-600">Transferências</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-600">{summary.sem_match}</div>
+                <div className="text-sm text-gray-600">Sem Match</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-red-600">{summary.conflitos || 0}</div>
+                <div className="text-sm text-gray-600">Conflitos</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-yellow-600">{summary.pendentes || 0}</div>
+                <div className="text-sm text-gray-600">Pendentes</div>
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="flex justify-between text-sm text-gray-600 mb-1">
+                <span>Progresso</span>
+                <span>{summary.percentageComplete.toFixed(1)}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${summary.percentageComplete}%` }}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+
+
+      {/* Filtros */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <Input
+                  placeholder="Buscar por descrição, beneficiário..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Filtrar por status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="conciliado">Conciliados</SelectItem>
+                <SelectItem value="sugerido">Sugeridos</SelectItem>
+                <SelectItem value="transferencia">Transferências</SelectItem>
+                <SelectItem value="sem_match">Sem Match</SelectItem>
+                <SelectItem value="conflito">Conflitos</SelectItem>
+                <SelectItem value="pendente">Pendentes</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              onClick={() => setShowFilters(!showFilters)}
+            >
+              <Filter className="h-4 w-4 mr-2" />
+              Filtros
+            </Button>
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="includeReconciled"
+                checked={includeReconciled}
+                onChange={(e) => {
+                  console.log('📋 Checkbox "Mostrar conciliados" alterado:', {
+                    novoValor: e.target.checked,
+                    valorAnterior: includeReconciled
+                  });
+                  setIncludeReconciled(e.target.checked);
+                }}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label 
+                htmlFor="includeReconciled" 
+                className="text-sm font-medium text-gray-700 cursor-pointer"
+              >
+                Mostrar conciliados
+              </label>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => {
+                console.log('🎨 Carregando dados de teste simples...');
+                const testPairs: ReconciliationPair[] = [
+                  {
+                    id: '1',
+                    bankTransaction: {
+                      id: '550e8400-e29b-41d4-a716-446655440001',
+                      fit_id: 'FIT001',
+                      memo: 'PIX RECEBIDO JOAO SILVA',
+                      amount: 1500.00,
+                      posted_at: '2025-08-15',
+                      transaction_type: 'CREDIT',
+                      status_conciliacao: 'pendente',
+                      bank_statement_id: '550e8400-e29b-41d4-a716-446655440011',
+                      bank_account_id: '550e8400-e29b-41d4-a716-446655440021'
+                    },
+                    systemTransaction: {
+                      id: '550e8400-e29b-41d4-a716-446655440031',
+                      descricao: 'Venda de produto - João Silva',
+                      valor: 1500.00,
+                      data_lancamento: '2025-08-15',
+                      tipo: 'receita',
+                    },
+                    status: 'suggested',
+                    matchScore: 0.98,
+                    matchReason: 'Match exato por valor e data',
+                    confidenceLevel: '100%',
+                  },
+                  {
+                    id: '2',
+                    bankTransaction: {
+                      id: '550e8400-e29b-41d4-a716-446655440002',
+                      fit_id: 'FIT002',
+                      memo: 'TED MARIA SANTOS',
+                      amount: 800.50,
+                      posted_at: '2025-08-20',
+                      transaction_type: 'CREDIT',
+                      status_conciliacao: 'pendente',
+                      bank_statement_id: '550e8400-e29b-41d4-a716-446655440012',
+                      bank_account_id: '550e8400-e29b-41d4-a716-446655440021'
+                    },
+                    systemTransaction: {
+                      id: '550e8400-e29b-41d4-a716-446655440032',
+                      descricao: 'Pagamento serviços - Maria',
+                      valor: 800.50,
+                      data_lancamento: '2025-08-19',
+                      tipo: 'receita',
+                    },
+                    status: 'suggested',
+                    matchScore: 0.85,
+                    matchReason: 'Valor igual, data próxima',
+                    confidenceLevel: 'provavel',
+                  },
+                  {
+                    id: '3',
+                    bankTransaction: {
+                      id: '550e8400-e29b-41d4-a716-446655440003',
+                      fit_id: 'FIT003',
+                      memo: 'PIX CONCILIADO TESTE',
+                      amount: 2500.00,
+                      posted_at: '2025-08-10',
+                      transaction_type: 'CREDIT',
+                      status_conciliacao: 'conciliado',
+                      bank_statement_id: '550e8400-e29b-41d4-a716-446655440013',
+                      bank_account_id: '550e8400-e29b-41d4-a716-446655440021'
+                    },
+                    systemTransaction: {
+                      id: '550e8400-e29b-41d4-a716-446655440033',
+                      descricao: 'Venda já conciliada',
+                      valor: 2500.00,
+                      data_lancamento: '2025-08-10',
+                      tipo: 'receita',
+                    },
+                    status: 'conciliado',
+                    matchScore: 1.0,
+                    matchReason: 'Transação já conciliada',
+                    confidenceLevel: '100%',
+                  }
+                ];
+                
+                setPairs(testPairs);
+                setSummary({
+                  total: 3,
+                  conciliados: 1,
+                  sugeridos: 1,
+                  transferencias: 0,
+                  sem_match: 1,
+                  conflitos: 0,
+                  pendentes: 0,
+                  percentageComplete: 33,
+                });
+                
+                toast({
+                  title: "Dados de teste carregados!",
+                  description: "2 transações criadas para teste",
+                });
+              }}
+              className="bg-blue-600 text-white hover:bg-blue-700"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              Testar Dados
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                console.log('🧹 TESTE SIMPLES - Limpando e testando filtro...');
+                
+                // Limpar tudo primeiro
+                setPairs([]);
+                setUsarFiltroPeriodo(false);
+                setDataInicio('');
+                setDataFim('');
+                
+                // Aguardar um pouco e aplicar dados de teste
+                setTimeout(() => {
+                  const simpleTestPairs: ReconciliationPair[] = [
+                    {
+                      id: 'agosto1',
+                      bankTransaction: {
+                        id: '550e8400-e29b-41d4-a716-446655440003',
+                        fit_id: 'FIT_AGOSTO_001',
+                        memo: 'PIX AGOSTO 2025',
+                        amount: 1000.00,
+                        posted_at: '2025-08-15',
+                        transaction_type: 'CREDIT',
+                        status_conciliacao: 'pendente',
+                        bank_statement_id: '550e8400-e29b-41d4-a716-446655440013',
+                        bank_account_id: '550e8400-e29b-41d4-a716-446655440021'
+                      },
+                      status: 'no_match',
+                      matchScore: 0.0,
+                      matchReason: 'Teste agosto',
+                      confidenceLevel: 'baixo',
+                    },
+                    {
+                      id: 'julho1',
+                      bankTransaction: {
+                        id: '550e8400-e29b-41d4-a716-446655440004',
+                        fit_id: 'FIT_JULHO_001',
+                        memo: 'PIX JULHO 2025',
+                        amount: 500.00,
+                        posted_at: '2025-07-15',
+                        transaction_type: 'CREDIT',
+                        status_conciliacao: 'pendente',
+                        bank_statement_id: '550e8400-e29b-41d4-a716-446655440014',
+                        bank_account_id: '550e8400-e29b-41d4-a716-446655440021'
+                      },
+                      status: 'no_match',
+                      matchScore: 0.0,
+                      matchReason: 'Teste julho',
+                      confidenceLevel: 'baixo',
+                    }
+                  ];
+                  
+                  console.log('📊 Aplicando dados simples:', simpleTestPairs);
+                  setPairs(simpleTestPairs);
+                  
+                  // Aguardar mais um pouco e ativar filtro
+                  setTimeout(() => {
+                    console.log('📅 Ativando filtro de agosto...');
+                    setUsarFiltroPeriodo(true);
+                    setDataInicio('2025-08-01');
+                    setDataFim('2025-08-31');
+                    
+                    console.log('✅ Teste simples concluído');
+                    toast({
+                      title: "Teste Simples Aplicado!",
+                      description: "2 transações criadas: 1 agosto, 1 julho. Filtro agosto ativo.",
+                    });
+                  }, 500);
+                }, 500);
+              }}
+              className="bg-purple-600 text-white hover:bg-purple-700"
+            >
+              <Calendar className="h-4 w-4 mr-2" />
+              Teste Simples
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                console.log('🔄 Forçando recarregamento de sugestões...');
+                console.log('📊 Estado atual:', {
+                  selectedBankAccountId,
+                  empresaId: empresaData?.id,
+                  periodo
+                });
+                
+                if (selectedBankAccountId) {
+                  loadSuggestions();
+                } else {
+                  toast({
+                    title: "Atenção",
+                    description: "Selecione uma conta bancária primeiro",
+                    variant: "destructive"
+                  });
+                }
+              }}
+              className="bg-green-600 text-white hover:bg-green-700"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Recarregar API
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                console.log('🧪 Testando matching engine com dados realistas...');
+                
+                // Simular dados que deveriam fazer match
+                const testPairs: ReconciliationPair[] = [
+                  {
+                    id: '1',
+                    bankTransaction: {
+                      id: '550e8400-e29b-41d4-a716-446655440005',
+                      fit_id: 'FIT001',
+                      memo: 'PIX RECEBIDO JOAO SILVA',
+                      amount: 1500.00,
+                      posted_at: '2024-01-15',
+                      transaction_type: 'CREDIT',
+                      status_conciliacao: 'pendente',
+                      bank_statement_id: '550e8400-e29b-41d4-a716-446655440015',
+                      bank_account_id: '550e8400-e29b-41d4-a716-446655440021'
+                    },
+                    systemTransaction: {
+                      id: '550e8400-e29b-41d4-a716-446655440035',
+                      descricao: 'PIX RECEBIDO JOAO SILVA',
+                      valor: 1500.00,
+                      data_lancamento: '2024-01-15',
+                      tipo: 'receita',
+                    },
+                    status: 'suggested',
+                    matchScore: 1.0,
+                    matchReason: 'Match exato por valor, data e descrição',
+                    confidenceLevel: '100%',
+                  },
+                  {
+                    id: '2',
+                    bankTransaction: {
+                      id: '550e8400-e29b-41d4-a716-446655440006',
+                      fit_id: 'FIT002',
+                      memo: 'TED MARIA SANTOS',
+                      amount: 800.50,
+                      posted_at: '2024-01-14',
+                      transaction_type: 'CREDIT',
+                      status_conciliacao: 'pendente',
+                      bank_statement_id: '550e8400-e29b-41d4-a716-446655440016',
+                      bank_account_id: '550e8400-e29b-41d4-a716-446655440021'
+                    },
+                    systemTransaction: {
+                      id: '550e8400-e29b-41d4-a716-446655440036',
+                      descricao: 'Pagamento serviços - Maria Santos',
+                      valor: 800.50,
+                      data_lancamento: '2024-01-13', // 1 dia de diferença
+                      tipo: 'receita',
+                    },
+                    status: 'suggested',
+                    matchScore: 0.85,
+                    matchReason: 'Valor igual, data próxima (1 dia)',
+                    confidenceLevel: 'provavel',
+                  },
+                  {
+                    id: '3',
+                    bankTransaction: {
+                      id: '550e8400-e29b-41d4-a716-446655440007',
+                      fit_id: 'FIT003',
+                      memo: 'SAQUE ATM BANCO 24H',
+                      amount: 200.00,
+                      posted_at: '2024-01-11',
+                      transaction_type: 'DEBIT',
+                      status_conciliacao: 'pendente',
+                      bank_statement_id: '550e8400-e29b-41d4-a716-446655440017',
+                      bank_account_id: '550e8400-e29b-41d4-a716-446655440021'
+                    },
+                    status: 'no_match',
+                    matchScore: 0.0,
+                    matchReason: 'Nenhuma correspondência encontrada',
+                    confidenceLevel: 'baixo',
+                  },
+                ];
+
+                console.log('📊 Aplicando dados de teste realistas:', testPairs);
+                setPairs(testPairs);
+                
+                const testSummary = {
+                  total: 3,
+                  conciliados: 1,
+                  sugeridos: 1,
+                  transferencias: 0,
+                  sem_match: 1,
+                  conflitos: 0,
+                  pendentes: 0,
+                  percentageComplete: 66.7,
+                };
+                setSummary(testSummary);
+                
+                toast({
+                  title: "Teste de Matching Aplicado!",
+                  description: "Dados realistas criados para testar o algoritmo de matching",
+                });
+              }}
+              className="bg-purple-600 text-white hover:bg-purple-700"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              Testar Matching
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Filtros Expandidos */}
       {showFilters && (
@@ -1589,333 +1891,139 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
                       htmlFor="usarFiltroPeriodo" 
                       className="text-sm font-medium text-gray-700 cursor-pointer"
                     >
-                      Usar Filtro de Período
+                      Filtrar por período específico
                     </label>
                   </div>
+                  
+                  {usarFiltroPeriodo && (dataInicio || dataFim) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        handleDataInicioChange('');
+                        handleDataFimChange('');
+                      }}
+                      className="text-xs"
+                    >
+                      <X className="h-3 w-3 mr-1" />
+                      Limpar Datas
+                    </Button>
+                  )}
                 </div>
                 
                 {usarFiltroPeriodo && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                  <div className="ml-6 space-y-4">
+                    {/* Períodos Pré-definidos */}
                     <div>
-                      <label htmlFor="dataInicio" className="block text-sm font-medium text-gray-700 mb-1">
-                        Data Início
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Períodos Rápidos
                       </label>
-                      <input
-                        type="date"
-                        id="dataInicio"
-                        value={dataInicio}
-                        onChange={(e) => setDataInicio(e.target.value)}
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                      />
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const hoje = new Date();
+                            const seteDiasAtras = new Date(hoje);
+                            seteDiasAtras.setDate(hoje.getDate() - 7);
+                            handleDataInicioChange(seteDiasAtras.toISOString().split('T')[0]);
+                            handleDataFimChange(hoje.toISOString().split('T')[0]);
+                          }}
+                          className="text-xs"
+                        >
+                          Últimos 7 dias
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const hoje = new Date();
+                            const trintaDiasAtras = new Date(hoje);
+                            trintaDiasAtras.setDate(hoje.getDate() - 30);
+                            handleDataInicioChange(trintaDiasAtras.toISOString().split('T')[0]);
+                            handleDataFimChange(hoje.toISOString().split('T')[0]);
+                          }}
+                          className="text-xs"
+                        >
+                          Últimos 30 dias
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const hoje = new Date();
+                            const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+                            handleDataInicioChange(primeiroDiaMes.toISOString().split('T')[0]);
+                            handleDataFimChange(hoje.toISOString().split('T')[0]);
+                          }}
+                          className="text-xs"
+                        >
+                          Este mês
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const hoje = new Date();
+                            const mesPassado = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+                            const ultimoDiaMesPassado = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+                            handleDataInicioChange(mesPassado.toISOString().split('T')[0]);
+                            handleDataFimChange(ultimoDiaMesPassado.toISOString().split('T')[0]);
+                          }}
+                          className="text-xs"
+                        >
+                          Mês passado
+                        </Button>
+                      </div>
                     </div>
-                    <div>
-                      <label htmlFor="dataFim" className="block text-sm font-medium text-gray-700 mb-1">
-                        Data Fim
-                      </label>
-                      <input
-                        type="date"
-                        id="dataFim"
-                        value={dataFim}
-                        onChange={(e) => setDataFim(e.target.value)}
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                      />
+                    
+                    {/* Campos de Data Manual */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Data Início
+                        </label>
+                        <div className="relative">
+                          <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                          <Input
+                            type="date"
+                            value={dataInicio}
+                            onChange={(e) => handleDataInicioChange(e.target.value)}
+                            className="pl-10"
+                            placeholder="Data de início"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Data Fim
+                        </label>
+                        <div className="relative">
+                          <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                          <Input
+                            type="date"
+                            value={dataFim}
+                            onChange={(e) => handleDataFimChange(e.target.value)}
+                            className="pl-10"
+                            placeholder="Data de fim"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
-              </div>
-
-              {/* Filtros de Status */}
-              <div className="space-y-3">
-                <h4 className="text-md font-medium text-gray-700">Filtrar por Status</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  {[
-                    { key: 'sugeridos', label: 'Sugeridos', color: 'blue' },
-                    { key: 'conciliados', label: 'Conciliados', color: 'green' },
-                    { key: 'pendentes', label: 'Pendentes', color: 'yellow' },
-                    { key: 'transferencias', label: 'Transferências', color: 'purple' },
-                  ].map((status) => (
-                    <label key={status.key} className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={filtroStatus[status.key as keyof typeof filtroStatus]}
-                        onChange={(e) => setFiltroStatus({
-                          ...filtroStatus,
-                          [status.key]: e.target.checked
-                        })}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700">{status.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Filtros de Valor */}
-              <div className="space-y-3">
-                <h4 className="text-md font-medium text-gray-700">Filtrar por Valor</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="valorMinimo" className="block text-sm font-medium text-gray-700 mb-1">
-                      Valor Mínimo
-                    </label>
-                    <input
-                      type="number"
-                      id="valorMinimo"
-                      value={valorMinimo}
-                      onChange={(e) => setValorMinimo(e.target.value)}
-                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                      placeholder="0,00"
-                    />
+                
+                {usarFiltroPeriodo && (dataInicio || dataFim) && (
+                  <div className="ml-6 p-3 bg-blue-50 rounded-lg">
+                    <p className="text-sm text-blue-700">
+                      <strong>Período ativo:</strong> 
+                      {dataInicio && ` De ${new Date(dataInicio).toLocaleDateString('pt-BR')}`}
+                      {dataInicio && dataFim && ' até '}
+                      {dataFim && `${new Date(dataFim).toLocaleDateString('pt-BR')}`}
+                    </p>
                   </div>
-                  <div>
-                    <label htmlFor="valorMaximo" className="block text-sm font-medium text-gray-700 mb-1">
-                      Valor Máximo
-                    </label>
-                    <input
-                      type="number"
-                      id="valorMaximo"
-                      value={valorMaximo}
-                      onChange={(e) => setValorMaximo(e.target.value)}
-                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                      placeholder="0,00"
-                    />
-                  </div>
-                </div>
+                )}
               </div>
-
-              {/* Filtro de Busca */}
-              <div className="space-y-3">
-                <h4 className="text-md font-medium text-gray-700">Buscar</h4>
-                <div className="relative">
-                  <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="text"
-                    value={termoBusca}
-                    onChange={(e) => setTermoBusca(e.target.value)}
-                    className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    placeholder="Buscar por descrição ou valor..."
-                  />
-                </div>
-              </div>
-
-              {/* Botões de Ação */}
-              <div className="flex flex-wrap gap-2 pt-4 border-t">
-                <Button
-                  onClick={aplicarFiltros}
-                  className="bg-blue-600 text-white hover:bg-blue-700"
-                >
-                  <Filter className="h-4 w-4 mr-2" />
-                  Aplicar Filtros
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={limparFiltros}
-                  className="border-gray-300 text-gray-700 hover:bg-gray-50"
-                >
-                  <X className="h-4 w-4 mr-2" />
-                  Limpar Filtros
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Cards de Resumo */}
-      {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Total de Transações</p>
-                  <p className="text-2xl font-bold text-gray-900">{summary.total}</p>
-                </div>
-                <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
-                  <Banknote className="h-4 w-4 text-blue-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Conciliados</p>
-                  <p className="text-2xl font-bold text-green-600">{summary.conciliados}</p>
-                </div>
-                <div className="h-8 w-8 bg-green-100 rounded-full flex items-center justify-center">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Sugeridos</p>
-                  <p className="text-2xl font-bold text-blue-600">{summary.sugeridos}</p>
-                </div>
-                <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
-                  <Clock className="h-4 w-4 text-blue-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Progresso</p>
-                  <p className="text-2xl font-bold text-purple-600">{summary.percentageComplete.toFixed(1)}%</p>
-                </div>
-                <div className="h-8 w-8 bg-purple-100 rounded-full flex items-center justify-center">
-                  <TrendingUp className="h-4 w-4 text-purple-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Seletor de Período e Conta Bancária */}
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row gap-4 items-end">
-            {/* Seletor de Período */}
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Período
-              </label>
-              <div className="flex gap-2">
-                <Select
-                  value={periodo.mes}
-                  onValueChange={(mes) => handlePeriodoChange(mes, periodo.ano)}
-                >
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="Mês" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {meses.map((mes) => (
-                      <SelectItem key={mes.value} value={mes.value}>
-                        {mes.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={periodo.ano}
-                  onValueChange={(ano) => handlePeriodoChange(periodo.mes, ano)}
-                >
-                  <SelectTrigger className="w-28">
-                    <SelectValue placeholder="Ano" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {gerarListaAnos().map((ano) => (
-                      <SelectItem key={ano} value={ano}>
-                        {ano}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    console.log('🔄 Forçando recarregamento do período atual:', periodo);
-                    // Limpar dados atuais
-                    setPairs([]);
-                    setSummary(null);
-                    
-                    // Recarregar dados
-                    if (selectedBankAccountId) {
-                      loadSuggestions();
-                    }
-                  }}
-                  className="px-3"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            {/* Input de Busca */}
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Buscar Transações
-              </label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <Input
-                  placeholder="Buscar por descrição, beneficiário, valor..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-
-            {/* Botões de Ação */}
-            <div className="flex gap-2">
-              <Button
-                onClick={() => setShowFilters(!showFilters)}
-                variant="outline"
-                className="flex items-center gap-2"
-              >
-                <Filter className="h-4 w-4" />
-                Filtros
-              </Button>
-              <Button
-                onClick={() => setIncludeReconciled(!includeReconciled)}
-                variant={includeReconciled ? "default" : "outline"}
-                className="flex items-center gap-2"
-              >
-                <input
-                  type="checkbox"
-                  checked={includeReconciled}
-                  onChange={() => {}}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                Mostrar conciliados
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Lista de Transações para Conciliação */}
-      {pairs.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Transações para Conciliação</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <p className="text-gray-600">
-                Lista de transações carregadas com sucesso.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Placeholder para quando não há dados */}
-      {pairs.length === 0 && !loading && (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <div className="space-y-4">
-              <div className="text-gray-400">
-                <Search className="h-12 w-12 mx-auto mb-4" />
-              </div>
-              <h3 className="text-lg font-medium text-gray-900">
-                Nenhuma transação encontrada
-              </h3>
-              <p className="text-gray-600">
-                Selecione uma conta bancária e período para ver as transações.
-              </p>
             </div>
           </CardContent>
         </Card>
@@ -1965,32 +2073,10 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
                     ))}
                   </SelectContent>
                 </Select>
-                {/* Botão para forçar recarregamento */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    console.log('🔄 Forçando recarregamento do período atual:', periodo);
-                    // Limpar dados
-                    setPairs([]);
-                    setSummary(null);
-                    // Forçar recarregamento
-                    if (selectedBankAccountId) {
-                      loadSuggestions();
-                    }
-                  }}
-                  className="px-2"
-                  title="Recarregar dados do período atual"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
               </div>
               <div className="text-right">
                 <div className="text-sm font-medium text-gray-900">
                   {dateFilteredPairs.length} de {pairs.length} transações
-                </div>
-                <div className="text-xs text-blue-600 font-medium">
-                  📅 Período: {meses.find(m => m.value === periodo.mes)?.label} {periodo.ano}
                 </div>
                 {(usarFiltroPeriodo || searchTerm || statusFilter !== 'all') && (
                   <div className="text-xs text-gray-500 mt-1">

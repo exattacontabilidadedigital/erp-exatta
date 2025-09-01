@@ -58,7 +58,8 @@ export async function POST(request: NextRequest) {
     const { error: bankUpdateError } = await supabase
       .from('bank_transactions')
       .update({ 
-        reconciliation_status: newStatus,
+        reconciliation_status: 'pending',
+        status_conciliacao: 'pendente',
         reconciled_at: null,
         matched_lancamento_id: null,
         match_confidence: null,
@@ -87,19 +88,9 @@ export async function POST(request: NextRequest) {
       const isSystemTransfer = systemTransaction?.tipo === 'transferencia' ||
                                systemTransaction?.descricao?.toUpperCase().includes('TRANSFER');
 
-      const { error: systemUpdateError } = await supabase
-        .from('lancamentos')
-        .update({ 
-          reconciled: false,
-          reconciled_at: null,
-          bank_transaction_id: null
-        })
-        .eq('id', bankTransaction.matched_lancamento_id);
-
-      if (systemUpdateError) {
-        console.error('❌ Erro ao desconciliar lançamento do sistema:', systemUpdateError);
-        // Não retorna erro pois a transação bancária já foi atualizada
-      }
+      // Nota: A tabela 'lancamentos' não possui campos específicos para conciliação
+      // O status de conciliação é gerenciado pela tabela 'bank_transactions' e 'transaction_matches'
+      console.log('✅ Status do sistema será gerenciado via transaction_matches');
 
       console.log('✅ Lançamento desconciliado:', {
         matched_lancamento_id: bankTransaction.matched_lancamento_id,
