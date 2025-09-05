@@ -64,13 +64,14 @@ export async function GET(request: NextRequest) {
       .gte('posted_at', periodStart)
       .lte('posted_at', periodEnd);
 
-    // Se includeReconciled for false, filtrar apenas sem processamento  
-    // Se for true, incluir todos os status
+    // ✅ CORREÇÃO: includeReconciled se refere apenas a transações já CONCILIADAS pelo usuário
+    // Transferências e sugestões são classificações automáticas, devem sempre aparecer
     if (includeReconciled) {
-      query = query.in('reconciliation_status', ['transferencia', 'sugerido', 'sem_match']);
+      // Mostrar todas as transações (incluindo as já conciliadas pelo usuário)
+      query = query.in('status_conciliacao', ['pendente', 'conciliado', 'ignorado']);
     } else {
-      // Por padrão, mostrar apenas sem_match para processar manualmente
-      query = query.eq('reconciliation_status', 'sem_match');
+      // Mostrar apenas as pendentes (incluindo transferências e sugestões que são classificações automáticas)
+      query = query.eq('status_conciliacao', 'pendente');
     }
 
     const { data: bankTransactions, error: bankError } = await query
