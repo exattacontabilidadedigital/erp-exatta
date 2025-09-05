@@ -19,9 +19,16 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from('bank_transactions')
       .update({
-        reconciliation_status: 'ignored',
+        reconciliation_status: 'sem_match',     // Classificação: sem_match (não atende regras)
+        status_conciliacao: 'ignorado',         // Ação do usuário: ignorado
         matched_lancamento_id: null,
-        match_confidence: null
+        match_confidence: null,
+        match_type: null,
+        match_criteria: null,
+        reconciled_at: null,
+        reconciled_by: null,
+        reconciliation_notes: reason || 'Transação ignorada pelo usuário',
+        updated_at: new Date().toISOString()
       })
       .eq('id', bank_transaction_id)
       .select()

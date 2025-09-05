@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import { OFXParserEnhanced } from '@/lib/ofx-parser-enhanced';
 import { MatchingEngine } from '@/lib/matching-engine';
+import { processAllTransactions } from '@/lib/transaction-processor';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -185,9 +186,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Inserir transações bancárias
-    console.log('💾 Inserindo transações bancárias...');
-    const bankTransactions = parsedData.transactions.map(txn => ({
+    // 🚀 NOVO: Buscar lançamentos do sistema ANTES de inserir transações
+    console.log('🔍 Buscando lançamentos do sistema para processamento...');
+    const { data: systemTransactions, error: systemError } = await supabase
+      .from('lancamentos')
+      .select('*')
+      .eq('empresa_id', finalEmpresaId)
+      .eq('status', 'pago')
+      .gte('data_lancamento', parsedData.period_start)
+      .lte('data_lancamento', parsedData.period_end);
+
+    if (systemError) {
+      console.error('❌ Erro ao buscar lançamentos:', systemError);
+      return NextResponse.json(
+        { error: 'Erro ao buscar lançamentos do sistema' },
+        { status: 500 }
+      );
+    }
+
+    console.log(`📊 Lançamentos encontrados: ${systemTransactions?.length || 0}`);
+
+    // 🚀 NOVO: Processar status correto durante a criação
+    console.log('🔄 Processando status das transações...');
+    const processedTransactions = processAllTransactions(
+      parsedData.transactions,
+      systemTransactions || []
+    );
+
+    // Inserir transações bancárias COM STATUS CORRETO
+    console.log('💾 Inserindo transações bancárias com status processado...');
+    const bankTransactions = processedTransactions.map(txn => ({
       bank_statement_id: bankStatement.id,
       bank_account_id: bankAccountId,
       empresa_id: finalEmpresaId,
@@ -200,7 +228,7 @@ export async function POST(request: NextRequest) {
       check_number: txn.check_number,
       reference_number: txn.reference_number,
       bank_reference: txn.bank_reference,
-      reconciliation_status: 'pending'
+      reconciliation_status: txn.reconciliation_status // 🚀 STATUS JÁ PROCESSADO!
     }));
 
     console.log(`📊 Inserindo ${bankTransactions.length} transações...`);

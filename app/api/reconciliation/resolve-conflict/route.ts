@@ -77,7 +77,8 @@ export async function POST(request: NextRequest) {
         await supabase
           .from('bank_transactions')
           .update({
-            reconciliation_status: 'reconciled',
+            reconciliation_status: 'sugerido',          // Classificação: sugerido (resolvido manualmente)
+            status_conciliacao: 'conciliado',           // Ação do usuário: conciliado
             matched_lancamento_id: selected_transaction_id,
             match_confidence: 'manual'
           })
@@ -100,7 +101,8 @@ export async function POST(request: NextRequest) {
         await supabase
           .from('bank_transactions')
           .update({
-            reconciliation_status: 'pending',
+            reconciliation_status: 'sem_match',         // Classificação: sem_match
+            status_conciliacao: 'pendente',             // Ação do usuário: pendente
             matched_lancamento_id: null,
             match_confidence: null
           })
@@ -113,7 +115,8 @@ export async function POST(request: NextRequest) {
         await supabase
           .from('bank_transactions')
           .update({
-            reconciliation_status: 'ignored',
+            reconciliation_status: 'sem_match',         // Classificação: sem_match
+            status_conciliacao: 'ignorado',             // Ação do usuário: ignorado
             matched_lancamento_id: null,
             match_confidence: null
           })

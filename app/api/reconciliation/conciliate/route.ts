@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
+import { FITIDValidator } from '@/lib/fitid-validator';
+import { getUserId, getEmpresaIdFromBankTransaction } from '@/lib/auth-utils';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,27 +17,109 @@ export async function POST(request: NextRequest) {
       rule_applied 
     } = await request.json();
 
-    console.log('🔗 Processando conciliação:', {
+    console.log('🔗 Iniciando processamento de conciliação:', {
       bank_transaction_id,
       system_transaction_id,
       confidence_level,
       rule_applied
     });
 
+    // VALIDAÇÃO CRÍTICA: Verificar se esta transação bancária específica já está conciliada
+    const { data: existingBankTrans, error: bankCheckError } = await supabase
+      .from('bank_transactions')
+      .select('id, fit_id, status_conciliacao, reconciliation_status, matched_lancamento_id, memo, payee, amount, posted_at')
+      .eq('id', bank_transaction_id)
+      .single();
+
+    if (bankCheckError) {
+      console.error('❌ Erro ao verificar transação bancária:', bankCheckError);
+      return NextResponse.json(
+        { error: 'Transação bancária não encontrada' },
+        { status: 404 }
+      );
+    }
+
+    console.log('🔍 Transação bancária encontrada:', {
+      id: existingBankTrans.id,
+      fit_id: existingBankTrans.fit_id || 'N/A',
+      status: existingBankTrans.status_conciliacao,
+      amount: existingBankTrans.amount,
+      description: existingBankTrans.memo || existingBankTrans.payee || 'N/A'
+    });
+
+    // VALIDAÇÃO FITID AVANÇADA: Usar validador especializado
+    console.log('🔒 Executando validação FITID...');
+    const fitidValidation = await FITIDValidator.validateForConciliation(bank_transaction_id, supabase);
+    
+    if (!fitidValidation.isValid) {
+      console.error('❌ Validação FITID falhou:', fitidValidation.error);
+      return NextResponse.json({
+        success: false,
+        message: fitidValidation.error || 'Erro na validação FITID',
+        fit_id: fitidValidation.fitId,
+        conflicting_transactions: fitidValidation.conflictingTransactions
+      }, { status: 409 });
+    }
+
+    console.log('✅ Validação FITID aprovada:', { fit_id: fitidValidation.fitId });
+
+    // VALIDAÇÃO FITID: Verificar se já existe outra conciliação com o mesmo FITID
+    if (existingBankTrans.fit_id) {
+      const { data: fitIdConflicts, error: fitIdError } = await supabase
+        .from('bank_transactions')
+        .select('id, fit_id, status_conciliacao, matched_lancamento_id')
+        .eq('fit_id', existingBankTrans.fit_id)
+        .eq('status_conciliacao', 'conciliado')
+        .neq('id', bank_transaction_id); // Excluir a própria transação
+
+      if (fitIdError) {
+        console.error('❌ Erro ao verificar conflitos de FITID:', fitIdError);
+      } else if (fitIdConflicts && fitIdConflicts.length > 0) {
+        console.log('⚠️ FITID já conciliado em outra transação:', {
+          fit_id: existingBankTrans.fit_id,
+          current_transaction: bank_transaction_id,
+          conflicting_transactions: fitIdConflicts
+        });
+        
+        return NextResponse.json({
+          success: false,
+          message: `Transação com FITID ${existingBankTrans.fit_id} já foi conciliada em outra transação`,
+          conflicting_transactions: fitIdConflicts,
+          fit_id: existingBankTrans.fit_id
+        }, { status: 409 });
+      }
+    }
+
+    // Se já está conciliada, impedir nova conciliação
+    if (existingBankTrans.status_conciliacao === 'conciliado') {
+      console.log('⚠️ Transação bancária já está conciliada:', {
+        id: bank_transaction_id,
+        fit_id: existingBankTrans.fit_id,
+        current_status: existingBankTrans.status_conciliacao,
+        matched_to: existingBankTrans.matched_lancamento_id
+      });
+      
+      return NextResponse.json({
+        success: false,
+        message: 'Esta transação bancária já está conciliada',
+        current_match: existingBankTrans.matched_lancamento_id,
+        fit_id: existingBankTrans.fit_id
+      }, { status: 409 }); // Conflict
+    }
+
     // Se não há system_transaction_id, é uma transação "sem correspondência"
     if (!system_transaction_id) {
       console.log('🚫 Marcando transação como sem correspondência');
       
-      // Apenas atualizar status da transação bancária
       const { error: updateError } = await supabase
         .from('bank_transactions')
         .update({ 
-          reconciliation_status: 'ignored',
-          status_conciliacao: 'ignorado',
+          reconciliation_status: 'sem_match',  // Corrigido: classificação de matching
+          status_conciliacao: 'ignorado',       // Correto: ação do usuário
           matched_lancamento_id: null,
           match_confidence: null
         })
-        .eq('id', bank_transaction_id);
+        .eq('id', bank_transaction_id); // ÚNICO UPDATE por ID específico
 
       if (updateError) {
         console.error('❌ Erro ao atualizar transação bancária:', updateError);
@@ -51,103 +135,294 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Verificar se já existe um match para esta combinação específica
-    const { data: existingMatch } = await supabase
-      .from('transaction_matches')
-      .select('*')
-      .eq('bank_transaction_id', bank_transaction_id)
-      .eq('system_transaction_id', system_transaction_id)
+    // VALIDAÇÃO CRÍTICA: Verificar se o lançamento do sistema existe e não está ocupado
+    const { data: existingSystemTrans, error: systemCheckError } = await supabase
+      .from('lancamentos')
+      .select('id, descricao, valor, data_lancamento')
+      .eq('id', system_transaction_id)
       .single();
 
-    if (existingMatch) {
-      // Atualizar match existente
-      const { data, error } = await supabase
-        .from('transaction_matches')
-        .update({
-          system_transaction_id,
-          match_score: confidence_level === '100%' ? 1.0 : 
-                      confidence_level === 'provavel' ? 0.8 : 0.5,
-          match_type: confidence_level === 'manual' ? 'manual' : 'automatic',
-          confidence_level: 'high',
-          status: 'confirmed',
-          notes: `Conciliação ${confidence_level} - Regra: ${rule_applied}`
-        })
-        .eq('id', existingMatch.id)
-        .select()
-        .single();
-
-      if (error) {
-        console.error('❌ Erro ao atualizar match:', error);
-        return NextResponse.json(
-          { error: 'Erro ao atualizar conciliação' },
-          { status: 500 }
-        );
-      }
-
-      console.log('✅ Match atualizado:', data.id);
-    } else {
-      // Criar novo match
-      const { data, error } = await supabase
-        .from('transaction_matches')
-        .insert({
-          bank_transaction_id,
-          system_transaction_id,
-          match_score: confidence_level === '100%' ? 1.0 : 
-                      confidence_level === 'provavel' ? 0.8 : 0.5,
-          match_type: confidence_level === 'manual' ? 'manual' : 'automatic',
-          confidence_level: 'high',
-          status: 'confirmed',
-          notes: `Conciliação ${confidence_level} - Regra: ${rule_applied}`
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error('❌ Erro ao criar match:', error);
-        return NextResponse.json(
-          { error: 'Erro ao criar conciliação' },
-          { status: 500 }
-        );
-      }
-
-      console.log('✅ Match criado:', data.id);
+    if (systemCheckError) {
+      console.error('❌ Erro ao verificar lançamento do sistema:', systemCheckError);
+      return NextResponse.json(
+        { error: 'Lançamento do sistema não encontrado' },
+        { status: 404 }
+      );
     }
 
-    // Atualizar status da transação bancária
-    // reconciliation_status: 'matched' = conciliada, 'pending' = pendente, 'ignored' = sem correspondência
+    // ✅ VALIDAÇÃO CRÍTICA MELHORADA: Verificar TODOS os matches para este lançamento
+    const { data: existingMatches, error: matchCheckError } = await supabase
+      .from('transaction_matches')
+      .select('bank_transaction_id, system_transaction_id, status, created_at')
+      .eq('system_transaction_id', system_transaction_id);
+
+    if (matchCheckError) {
+      console.error('❌ Erro ao verificar matches existentes:', matchCheckError);
+      return NextResponse.json(
+        { error: 'Erro ao verificar lançamentos conciliados' },
+        { status: 500 }
+      );
+    }
+
+    // ✅ REGRA RÍGIDA: Um lançamento do sistema pode ter APENAS UM match confirmado
+    const confirmedMatches = existingMatches?.filter(m => m.status === 'confirmed') || [];
+    
+    if (confirmedMatches.length > 0) {
+      // Verificar se é uma tentativa de re-conciliar a mesma transação (permitido)
+      const isSameTransaction = confirmedMatches.some(match => 
+        match.bank_transaction_id === bank_transaction_id
+      );
+      
+      if (!isSameTransaction) {
+        console.log('🚫 BLOQUEADO: Lançamento do sistema já está conciliado com outra transação:', {
+          system_transaction_id,
+          existing_matches: confirmedMatches,
+          attempted_bank_transaction_id: bank_transaction_id
+        });
+        
+        return NextResponse.json({
+          success: false,
+          error: 'DUPLICAÇÃO_BLOQUEADA',
+          message: 'Este lançamento do sistema já está conciliado com outra transação bancária',
+          system_transaction_id,
+          existing_confirmed_matches: confirmedMatches
+        }, { status: 409 });
+      } else {
+        console.log('✅ Re-conciliação permitida - mesma transação');
+      }
+    }
+
+    // ✅ LIMPEZA AUTOMÁTICA: Remover matches pendentes ou sugeridos antes de confirmar
+    if (existingMatches && existingMatches.length > 0) {
+      const pendingMatches = existingMatches.filter(m => 
+        m.status !== 'confirmed' && m.bank_transaction_id !== bank_transaction_id
+      );
+      
+      if (pendingMatches.length > 0) {
+        console.log('🧹 Limpando matches pendentes/sugeridos:', pendingMatches.length);
+        
+        const { error: cleanupError } = await supabase
+          .from('transaction_matches')
+          .delete()
+          .in('bank_transaction_id', pendingMatches.map(m => m.bank_transaction_id))
+          .eq('system_transaction_id', system_transaction_id)
+          .neq('status', 'confirmed');
+          
+        if (cleanupError) {
+          console.error('⚠️ Erro na limpeza de matches pendentes:', cleanupError);
+          // Não falhar aqui - continuar com a conciliação
+        }
+      }
+    }
+
+    // ✅ VALIDAÇÃO ADICIONAL: Verificar se a transação bancária também não está duplicada
+    const { data: bankMatches, error: bankMatchError } = await supabase
+      .from('transaction_matches')
+      .select('bank_transaction_id, system_transaction_id, status, created_at')
+      .eq('bank_transaction_id', bank_transaction_id);
+
+    if (bankMatchError) {
+      console.error('❌ Erro ao verificar matches da transação bancária:', bankMatchError);
+      return NextResponse.json(
+        { error: 'Erro ao verificar transação bancária' },
+        { status: 500 }
+      );
+    }
+
+    const confirmedBankMatches = bankMatches?.filter(m => m.status === 'confirmed') || [];
+    
+    if (confirmedBankMatches.length > 0) {
+      // Verificar se é uma tentativa de re-conciliar o mesmo lançamento (permitido)
+      const isSameSystemTransaction = confirmedBankMatches.some(match => 
+        match.system_transaction_id === system_transaction_id
+      );
+      
+      if (!isSameSystemTransaction) {
+        console.log('🚫 BLOQUEADO: Transação bancária já está conciliada com outro lançamento:', {
+          bank_transaction_id,
+          existing_matches: confirmedBankMatches,
+          attempted_system_transaction_id: system_transaction_id
+        });
+        
+        return NextResponse.json({
+          success: false,
+          error: 'TRANSACAO_BANCARIA_JA_CONCILIADA',
+          message: 'Esta transação bancária já está conciliada com outro lançamento do sistema',
+          bank_transaction_id,
+          existing_confirmed_matches: confirmedBankMatches
+        }, { status: 409 });
+      } else {
+        console.log('✅ Re-conciliação permitida - mesmo lançamento do sistema');
+      }
+    }
+
+    // TRANSACTION: Atualizar match específico de forma atômica
+    console.log('🔄 Iniciando conciliação atômica...');
+
+    // 1. ✅ LIMPEZA PREVENTIVA: Remover matches órfãos e conflitantes ANTES de criar novo
+    console.log('🧹 Executando limpeza preventiva de conflitos...');
+    
+    // Remover matches pendentes/sugeridos da transação bancária
+    const { error: cleanupBankError } = await supabase
+      .from('transaction_matches')
+      .delete()
+      .eq('bank_transaction_id', bank_transaction_id)
+      .neq('status', 'confirmed');
+      
+    if (cleanupBankError) {
+      console.error('⚠️ Erro na limpeza de matches bancários:', cleanupBankError);
+    }
+    
+    // Remover matches pendentes/sugeridos do lançamento do sistema (exceto confirmed)
+    const { error: cleanupSystemError } = await supabase
+      .from('transaction_matches')
+      .delete()
+      .eq('system_transaction_id', system_transaction_id)
+      .neq('status', 'confirmed')
+      .neq('bank_transaction_id', bank_transaction_id); // Manter se for o mesmo par
+      
+    if (cleanupSystemError) {
+      console.error('⚠️ Erro na limpeza de matches do sistema:', cleanupSystemError);
+    }
+
+    // 2. Criar/atualizar o match específico
+    const { data: matchData, error: matchError } = await supabase
+      .from('transaction_matches')
+      .upsert({
+        bank_transaction_id,
+        system_transaction_id,
+        match_score: confidence_level === '100%' ? 1.0 : 
+                    confidence_level === 'high' ? 0.9 :
+                    confidence_level === 'provavel' ? 0.8 : 
+                    confidence_level === 'manual' ? 1.0 : 0.5,
+        match_type: confidence_level === 'manual' ? 'manual' : 'automatic',
+        confidence_level: 'high',
+        status: 'confirmed',
+        notes: `Conciliação ${confidence_level} - Regra: ${rule_applied} - Específica`
+      }, { 
+        onConflict: 'bank_transaction_id,system_transaction_id' 
+      })
+      .select()
+      .single();
+
+    if (matchError) {
+      console.error('❌ Erro ao criar/atualizar match:', matchError);
+      return NextResponse.json(
+        { error: 'Erro ao criar conciliação específica' },
+        { status: 500 }
+      );
+    }
+
+    // 2. Atualizar transação bancária com TODOS os campos de auditoria
     const confidenceValue = confidence_level === '100%' ? 1.0 : 
                             confidence_level === 'high' ? 0.9 :
                             confidence_level === 'provavel' ? 0.8 : 
                             confidence_level === 'manual' ? 1.0 : 0.5;
+
+    // Determinar o tipo de match baseado no rule_applied
+    const matchType = rule_applied?.includes('manual') ? 'manual' :
+                     rule_applied?.includes('exact') ? 'exact' :
+                     rule_applied?.includes('fuzzy') ? 'fuzzy' : 'rule';
+
+    // Obter empresa_id e user_id para auditoria
+    const empresaId = await getEmpresaIdFromBankTransaction(bank_transaction_id);
+    const userId = await getUserId(request, empresaId || undefined);
+
+    console.log('🔍 Dados de auditoria:', {
+      empresaId,
+      userId: userId || 'Não disponível',
+      source: userId ? 'Obtido dinamicamente' : 'Fallback não encontrado'
+    });
+
+    // Criar critérios de match detalhados
+    const matchCriteria = {
+      rule_applied: rule_applied || 'unknown',
+      confidence_level,
+      timestamp: new Date().toISOString(),
+      system_transaction_id,
+      bank_transaction_id,
+      match_score: confidenceValue,
+      empresa_id: empresaId,
+      user_id: userId,
+      criteria_used: {
+        amount_match: true,
+        date_match: true,
+        description_match: rule_applied?.includes('description') || false,
+        transfer_detection: rule_applied?.includes('transfer') || false,
+        manual_override: rule_applied?.includes('manual') || false
+      }
+    };
     
     const { error: updateError } = await supabase
       .from('bank_transactions')
       .update({ 
-        reconciliation_status: 'matched',
-        status_conciliacao: 'conciliado',
+        // Status fields - CORRIGIDO conforme especificação
+        reconciliation_status: 'sugerido',     // Classificação: sugerido/transferencia/sem_match
+        status_conciliacao: 'conciliado',      // Ação do usuário: pendente/conciliado/etc
+        
+        // Match fields - IMPLEMENTAÇÃO COMPLETA
         matched_lancamento_id: system_transaction_id,
-        match_confidence: confidenceValue
+        match_confidence: confidenceValue,
+        match_type: matchType,
+        match_criteria: matchCriteria,
+        
+        // Audit fields - IMPLEMENTAÇÃO COMPLETA
+        reconciled_at: new Date().toISOString(),
+        reconciled_by: userId,
+        reconciliation_notes: `Conciliado via ${rule_applied || 'sistema'} com confiança ${confidence_level}${userId ? ` por usuário ${userId}` : ''}`,
+        
+        // Update timestamp
+        updated_at: new Date().toISOString()
       })
-      .eq('id', bank_transaction_id);
+      .eq('id', bank_transaction_id); // ✅ ÚNICO UPDATE por ID específico
 
     if (updateError) {
-      console.error('❌ Erro ao atualizar transação bancária:', updateError);
+      console.error('❌ Erro ao atualizar transação bancária específica:', updateError);
+      
+      // Reverter o match se falhou o update da transação
+      await supabase
+        .from('transaction_matches')
+        .delete()
+        .eq('bank_transaction_id', bank_transaction_id)
+        .eq('system_transaction_id', system_transaction_id);
+        
+      return NextResponse.json(
+        { error: 'Erro ao atualizar status da transação bancária' },
+        { status: 500 }
+      );
     }
 
-    // Atualizar status_conciliacao da transação do sistema
-    // Nota: A tabela 'lancamentos' não possui campo específico para status de conciliação
-    // O status de conciliação é gerenciado pela tabela 'bank_transactions' e 'transaction_matches'
-    console.log('✅ Status do sistema será gerenciado via transaction_matches');
+    console.log('✅ Conciliação completa bem-sucedida:', {
+      bank_transaction_id,
+      system_transaction_id,
+      match_id: matchData.id,
+      fit_id: existingBankTrans.fit_id || 'N/A',
+      bank_amount: existingBankTrans.amount,
+      confidence_level,
+      match_type: matchType,
+      match_confidence: confidenceValue,
+      reconciled_at: new Date().toISOString(),
+      match_criteria: matchCriteria
+    });
 
     return NextResponse.json({ 
       success: true, 
-      message: 'Conciliação realizada com sucesso' 
+      message: 'Conciliação completa realizada com sucesso',
+      data: {
+        match_id: matchData.id,
+        bank_transaction_id,
+        system_transaction_id,
+        match_type: matchType,
+        match_confidence: confidenceValue,
+        reconciled_at: new Date().toISOString(),
+        rule_applied: rule_applied || 'sistema'
+      }
     });
 
   } catch (error) {
-    console.error('❌ Erro no endpoint de conciliação:', error);
+    console.error('❌ Erro no endpoint de conciliação específica:', error);
     return NextResponse.json(
-      { error: 'Erro interno do servidor' },
+      { error: 'Erro interno do servidor', details: error instanceof Error ? error.message : 'Erro desconhecido' },
       { status: 500 }
     );
   }

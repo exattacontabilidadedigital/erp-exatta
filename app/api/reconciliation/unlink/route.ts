@@ -54,17 +54,27 @@ export async function POST(request: NextRequest) {
       transaction_type: bankTransaction.transaction_type
     });
 
-    // Atualizar status da transação bancária
+    // Atualizar status da transação bancária - LIMPEZA COMPLETA
     const { error: bankUpdateError } = await supabase
       .from('bank_transactions')
       .update({ 
-        reconciliation_status: 'pending',
-        status_conciliacao: 'pendente',
-        reconciled_at: null,
+        // Reset status fields - CORRIGIDO conforme especificação
+        reconciliation_status: 'sem_match',      // Classificação: volta para sem_match
+        status_conciliacao: 'pendente',          // Ação do usuário: volta para pendente
+        
+        // Clear match fields - IMPLEMENTAÇÃO COMPLETA
         matched_lancamento_id: null,
         match_confidence: null,
         match_type: null,
-        match_criteria: null
+        match_criteria: null,
+        
+        // Clear audit fields - IMPLEMENTAÇÃO COMPLETA
+        reconciled_at: null,
+        reconciled_by: null,
+        reconciliation_notes: null,
+        
+        // Update timestamp
+        updated_at: new Date().toISOString()
       })
       .eq('id', bank_transaction_id);
 
@@ -102,7 +112,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Transação desconciliada com sucesso',
+      message: 'Transação desvinculada com sucesso - status voltou para pendente',
       bank_transaction_id,
       unlinked_at: new Date().toISOString()
     });

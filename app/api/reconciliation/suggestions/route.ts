@@ -64,12 +64,13 @@ export async function GET(request: NextRequest) {
       .gte('posted_at', periodStart)
       .lte('posted_at', periodEnd);
 
-    // Se includeReconciled for false, filtrar apenas pending
-    // Se for true, incluir pending, matched e ignored
+    // Se includeReconciled for false, filtrar apenas sem processamento  
+    // Se for true, incluir todos os status
     if (includeReconciled) {
-      query = query.in('reconciliation_status', ['pending', 'matched', 'ignored']);
+      query = query.in('reconciliation_status', ['transferencia', 'sugerido', 'sem_match']);
     } else {
-      query = query.eq('reconciliation_status', 'pending');
+      // Por padrão, mostrar apenas sem_match para processar manualmente
+      query = query.eq('reconciliation_status', 'sem_match');
     }
 
     const { data: bankTransactions, error: bankError } = await query
@@ -166,8 +167,8 @@ export async function GET(request: NextRequest) {
       console.log(`   - ${rule.nome} (${rule.tipo}) - Peso: ${rule.peso}`);
     });
 
-    // Executar algoritmo de matching
-    console.log('🔍 Iniciando algoritmo de matching na API...');
+    // Executar algoritmo de matching COMPLETO
+    console.log('🔍 Iniciando algoritmo de matching COMPLETO na API...');
     console.log('📊 Dados para matching:', {
       bankTransactionsCount: bankTransactions?.length || 0,
       systemTransactionsCount: systemTransactions?.length || 0,
@@ -177,25 +178,51 @@ export async function GET(request: NextRequest) {
 
     const matchingEngine = new MatchingEngine(matchingRules || []);
     
+    // ✅ CORREÇÃO: Executar processamento COMPLETO incluindo detecção de transferências
     const matchResults = await matchingEngine.processMatching(
       bankTransactions || [],
       systemTransactions || []
     );
     
-    console.log(`✅ Matching API concluído: ${matchResults.length} resultados`);
-    console.log('📋 Sample result:', matchResults[0]);
+    console.log(`✅ Matching API COMPLETO concluído: ${matchResults.length} resultados`);
+    
+    // Log detalhado dos resultados incluindo transferências
+    const statusDistribution = matchResults.reduce((acc: any, result: any) => {
+      acc[result.status] = (acc[result.status] || 0) + 1;
+      return acc;
+    }, {});
+    
+    console.log('📊 Distribuição de status após matching:', statusDistribution);
+    console.log('📋 Sample results:', matchResults.slice(0, 3));
 
-    // Atualizar status baseado em matches existentes
-    console.log('🔄 Aplicando status de matches existentes...');
+    // ✅ NOVA LÓGICA: Verificar e detectar transferências INDEPENDENTE de matches existentes
+    console.log('🔄 Aplicando lógica avançada para transferências e matches...');
+    
     matchResults.forEach((result: any) => {
       const existingMatch = existingMatchesMap.get(result.bankTransaction.id);
-      if (existingMatch) {
+      const bankTxn = result.bankTransaction;
+      
+      // ✅ SEMPRE verificar se é transferência PRIMEIRO (prioridade máxima)
+      const isTransfer = matchingEngine.isTransfer(bankTxn?.fit_id, bankTxn?.payee);
+      
+      if (isTransfer) {
+        // ✅ TRANSFERÊNCIA tem prioridade sobre qualquer match existente
+        console.log(`🔄 TRANSFERÊNCIA DETECTADA: ${bankTxn.id}`, {
+          fit_id: bankTxn.fit_id,
+          payee: bankTxn.payee,
+          memo: bankTxn.memo,
+          hadExistingMatch: !!existingMatch
+        });
+        result.status = 'transferencia';
+        result.matchReason = 'Transferência detectada por keywords';
+        result.confidenceLevel = 'high';
+      } else if (existingMatch) {
+        // ✅ Se não é transferência, aplicar lógica de matches existentes
         console.log(`📌 Match existente encontrado para transação ${result.bankTransaction.id}:`, {
           status: existingMatch.status,
           confidence: existingMatch.confidence_level
         });
         
-        // Atualizar status baseado no match existente
         if (existingMatch.status === 'confirmed') {
           result.status = 'conciliado';
         } else if (existingMatch.status === 'rejected') {
@@ -204,23 +231,29 @@ export async function GET(request: NextRequest) {
           result.status = 'sugerido';
         }
         
-        // Também atualizar outras propriedades relevantes
         result.matchScore = Math.round((existingMatch.match_score || 0) * 100);
         result.confidenceLevel = existingMatch.confidence_level || result.confidenceLevel;
-      } else {
-        // Se não há match existente, verificar se é uma transferência desconciliada
-        const isTransfer = result.bankTransaction?.memo?.toUpperCase().includes('TRANSFER') || 
-                          result.bankTransaction?.payee?.toUpperCase().includes('TRANSFER') ||
-                          result.bankTransaction?.transaction_type === 'TRANSFER';
-        
-        if (isTransfer && result.bankTransaction?.reconciliation_status === 'pending') {
-          console.log(`🔄 Transferência desconciliada detectada para transação ${result.bankTransaction.id}`);
-          result.status = 'transferencia';
-        }
       }
+      // ✅ Se não é transferência e não tem match existente, manter resultado do matching engine
     });
 
     console.log('✅ Status atualizado baseado em matches existentes');
+
+    // 🚀 NOVO: As transações já têm status correto, apenas gerar resumo
+    console.log('� Gerando resumo baseado nos status existentes...');
+    
+    const statusSummary = {
+      transferencia: matchResults.filter(r => r.status === 'transferencia').length,
+      sugerido: matchResults.filter(r => r.status === 'sugerido').length,
+      sem_match: matchResults.filter(r => r.status === 'sem_match').length,
+      conciliado: matchResults.filter(r => r.status === 'conciliado').length
+    };
+    
+    console.log('📊 RESUMO DOS STATUS:', {
+      totalTransacoes: matchResults.length,
+      ...statusSummary,
+      timestamp: new Date().toISOString()
+    });
 
     // Gerar resumo
     const summary = matchingEngine.generateSummary(matchResults);
@@ -281,8 +314,25 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Salvar matches no banco de dados (apenas os que têm system_transaction_id)
+    // ✅ CORREÇÃO: Garantir apenas 1 match por transação bancária
     if (reconciliationSession) {
+      // 1. Limpar matches existentes para estas transações bancárias
+      const bankTransactionIds = matchResults.map(result => result.bankTransaction.id);
+      
+      console.log(`🧹 Limpando matches existentes para ${bankTransactionIds.length} transações bancárias...`);
+      
+      const { error: cleanupError } = await supabase
+        .from('transaction_matches')
+        .delete()
+        .in('bank_transaction_id', bankTransactionIds);
+      
+      if (cleanupError) {
+        console.error('⚠️ Erro na limpeza preventiva:', cleanupError);
+      } else {
+        console.log('✅ Matches antigos removidos com sucesso');
+      }
+      
+      // 2. Criar novos matches únicos (apenas os que têm system_transaction_id)
       const matchesToInsert = matchResults
         .filter(result => result.systemTransaction?.id) // Filtrar apenas matches com system_transaction_id
         .map(result => {
@@ -305,14 +355,21 @@ export async function GET(request: NextRequest) {
           };
         });
 
-      console.log(`💾 Salvando ${matchesToInsert.length} matches válidos (de ${matchResults.length} totais)`);
+      // ✅ VALIDAÇÃO CRÍTICA: Garantir unicidade por bank_transaction_id
+      const uniqueMatches = matchesToInsert.filter((match, index, array) => {
+        return array.findIndex(m => m.bank_transaction_id === match.bank_transaction_id) === index;
+      });
 
-      if (matchesToInsert.length > 0) {
+      if (uniqueMatches.length !== matchesToInsert.length) {
+        console.warn(`⚠️ Duplicatas removidas: ${matchesToInsert.length - uniqueMatches.length}`);
+      }
+
+      console.log(`💾 Salvando ${uniqueMatches.length} matches únicos (de ${matchResults.length} resultados totais)`);
+
+      if (uniqueMatches.length > 0) {
         const { error: matchesError } = await supabase
           .from('transaction_matches')
-          .upsert(matchesToInsert, { 
-            onConflict: 'bank_transaction_id,system_transaction_id' 
-          });
+          .insert(uniqueMatches); // ✅ Usar INSERT em vez de UPSERT para garantir novos registros
 
         if (matchesError) {
           console.error('❌ Erro ao salvar matches:', matchesError);

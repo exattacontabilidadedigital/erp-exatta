@@ -22,13 +22,13 @@ export async function POST(request: NextRequest) {
 
     console.log('📊 Rejeitando sugestão:', { bank_transaction_id, reason });
 
-    // Atualizar status da transação bancária para pending (resetar status)
-    // Como a constraint só aceita 'pending' e 'matched', usamos 'pending' para indicar 
-    // que a sugestão foi rejeitada e precisa de nova análise
+    // Atualizar status da transação bancária para sem_match (resetar status)
+    // A sugestão foi rejeitada e volta para sem_match para nova análise
     const { error: updateError } = await supabase
       .from('bank_transactions')
       .update({ 
-        reconciliation_status: 'pending',
+        reconciliation_status: 'sem_match',             // Classificação: sem_match (rejeitada)
+        status_conciliacao: 'pendente',                 // Ação do usuário: pendente
         matched_lancamento_id: null,
         match_confidence: null,
         match_type: null,
