@@ -33,7 +33,7 @@ export interface MatchingRule {
   nome: string;
   tipo: 'valor_data' | 'descricao' | 'transferencia' | 'historico';
   parametros: {
-    tolerancia_valor?: number; // Percentual
+    tolerancia_valor?: number; // Percentual ou valor absoluto (R$)
     tolerancia_dias?: number; // Dias
     similaridade_minima?: number; // Percentual
     palavras_chave?: string[];
@@ -41,6 +41,27 @@ export interface MatchingRule {
   peso: number;
   ativa: boolean;
 }
+
+/**
+ * ✅ CONFIGURAÇÕES PADRÃO CONFORME DOCUMENTAÇÃO
+ */
+export const DEFAULT_MATCHING_CONFIG = {
+  sugestao: {
+    tolerancia_valor_percentual: 1, // 1% de tolerância no valor
+    tolerancia_valor_absoluto: 2.00, // R$ 2,00 de tolerância absoluta
+    tolerancia_dias: 3, // 3 dias de tolerância na data
+    similaridade_minima: 75 // 75% de similaridade na descrição
+  },
+  transferencia: {
+    tolerancia_valor: 0.01, // R$ 0,01 (1 centavo) para transferências
+    tolerancia_dias: 0, // ZERO tolerância - data exatamente igual
+    termos_obrigatorios: true // Pelo menos um lado deve ter termos
+  },
+  match_exato: {
+    tolerancia_valor: 0.01, // R$ 0,01 para valores exatos
+    similaridade_minima: 85 // 85% para descrições
+  }
+};
 
 export interface MatchResult {
   bankTransaction: BankTransaction;
@@ -70,6 +91,24 @@ export class MatchingEngine {
   }
 
   /**
+   * Método público para detectar se uma transação bancária é uma transferência
+   * Baseado nos padrões de fit_id e payee
+   */
+  public isTransfer(fitId?: string, payee?: string): boolean {
+    const mockBankTransaction: BankTransaction = {
+      id: 'temp',
+      fit_id: fitId || '',
+      memo: '',
+      payee: payee || '',
+      amount: 0,
+      posted_at: '',
+      transaction_type: 'DEBIT'
+    };
+    
+    return this.hasTransferKeywords(mockBankTransaction);
+  }
+
+  /**
    * Executa o algoritmo de matching completo
    */
   async processMatching(
@@ -83,14 +122,20 @@ export class MatchingEngine {
 
     const results: MatchResult[] = [];
     const usedSystemTransactions = new Set<string>();
+    const processedBankTransactions = new Set<string>(); // ✅ NOVO: Controlar transações já processadas
 
     // Fase 1: Matching Exato (valor + data)
     console.log('🎯 Fase 1: Matching Exato...');
     for (const bankTxn of bankTransactions) {
+      if (processedBankTransactions.has(bankTxn.id)) continue; // ✅ Evitar duplicação
+      
       const exactMatch = this.findExactMatch(bankTxn, systemTransactions, usedSystemTransactions);
       if (exactMatch) {
         results.push(exactMatch);
-        usedSystemTransactions.add(exactMatch.systemTransaction!.id);
+        processedBankTransactions.add(bankTxn.id); // ✅ Marcar como processada
+        if (exactMatch.systemTransaction) {
+          usedSystemTransactions.add(exactMatch.systemTransaction.id);
+        }
       }
     }
 
@@ -99,11 +144,12 @@ export class MatchingEngine {
     const activeRules = rules.filter(rule => rule.ativa).sort((a, b) => b.peso - a.peso);
     
     for (const bankTxn of bankTransactions) {
-      if (results.find(r => r.bankTransaction.id === bankTxn.id)) continue;
+      if (processedBankTransactions.has(bankTxn.id)) continue; // ✅ Verificar se já foi processada
       
       const ruleMatch = this.findRuleMatch(bankTxn, systemTransactions, activeRules, usedSystemTransactions);
       if (ruleMatch) {
         results.push(ruleMatch);
+        processedBankTransactions.add(bankTxn.id); // ✅ Marcar como processada
         if (ruleMatch.systemTransaction) {
           usedSystemTransactions.add(ruleMatch.systemTransaction.id);
         }
@@ -113,34 +159,57 @@ export class MatchingEngine {
     // Fase 3: Detecção de Transferências
     console.log('🎯 Fase 3: Detecção de Transferências...');
     for (const bankTxn of bankTransactions) {
-      if (results.find(r => r.bankTransaction.id === bankTxn.id)) continue;
+      if (processedBankTransactions.has(bankTxn.id)) continue; // ✅ Verificar se já foi processada
       
       const transferMatch = this.detectTransfer(bankTxn, systemTransactions, usedSystemTransactions);
       if (transferMatch) {
         results.push(transferMatch);
+        processedBankTransactions.add(bankTxn.id); // ✅ Marcar como processada
         if (transferMatch.systemTransaction) {
           usedSystemTransactions.add(transferMatch.systemTransaction.id);
         }
       }
     }
 
-    // Fase 4: Sem Match
-    console.log('🎯 Fase 4: Identificando sem match...');
+    // Fase 4: Identificar Sem Match
+    console.log('🎯 Fase 4: Identificando transações sem match...');
     for (const bankTxn of bankTransactions) {
-      if (results.find(r => r.bankTransaction.id === bankTxn.id)) continue;
+      if (processedBankTransactions.has(bankTxn.id)) continue; // ✅ Verificar se já foi processada
+      
+      // ✅ NOVA LÓGICA: Todas as transações restantes são sem_match
+      // (incluindo transferências OFX sem correspondência no sistema)
+      console.log(`❌ Sem match: ${bankTxn.memo || bankTxn.payee} (${bankTxn.amount})`);
       
       results.push({
         bankTransaction: bankTxn,
         status: 'sem_match',
         matchScore: 0,
-        matchReason: 'Nenhuma correspondência encontrada',
+        matchReason: 'Nenhuma correspondência encontrada no sistema',
         confidenceLevel: 'low',
         matchType: 'manual'
       });
+      
+      processedBankTransactions.add(bankTxn.id); // ✅ Marcar como processada
     }
 
-    console.log(`✅ Matching concluído: ${results.length} resultados`);
-    return results;
+    // ✅ VALIDAÇÃO FINAL: Garantir unicidade
+    const uniqueResults = results.filter((result, index, array) => {
+      return array.findIndex(r => r.bankTransaction.id === result.bankTransaction.id) === index;
+    });
+
+    if (uniqueResults.length !== results.length) {
+      console.warn(`⚠️ Duplicações removidas no matching: ${results.length - uniqueResults.length}`);
+    }
+
+    console.log(`✅ Matching concluído: ${uniqueResults.length} resultados únicos (de ${bankTransactions.length} transações bancárias)`);
+    
+    // ✅ VALIDAÇÃO CRÍTICA: Nunca pode ter mais resultados que transações bancárias
+    if (uniqueResults.length > bankTransactions.length) {
+      console.error('🚨 ERRO CRÍTICO: Mais resultados que transações bancárias de entrada!');
+      throw new Error('Matching engine error: More results than input bank transactions');
+    }
+
+    return uniqueResults;
   }
 
   /**
@@ -160,6 +229,11 @@ export class MatchingEngine {
 
     for (const systemTxn of systemTransactions) {
       if (usedTransactions.has(systemTxn.id)) continue;
+
+      // ✅ VALIDAÇÃO DE MESMO SINAL TAMBÉM PARA MATCH EXATO
+      const bankIsPositive = bankTxn.amount >= 0;
+      const systemIsPositive = systemTxn.valor >= 0;
+      const sameSinal = bankIsPositive === systemIsPositive;
 
       // Verificar valor exato
       const amountDiff = Math.abs(bankTxn.amount - systemTxn.valor);
@@ -194,25 +268,42 @@ export class MatchingEngine {
         amountDiff,
         dateMatch,
         descriptionSimilarity: descriptionSimilarity.toFixed(1),
-        descriptionMatch
+        descriptionMatch,
+        sameSinal,
+        bankSign: bankIsPositive ? '+' : '-',
+        systemSign: systemIsPositive ? '+' : '-'
       });
 
+      // ✅ APLICAR REGRA: Para match exato, também verificar se não são transferências com sinais opostos
       if (amountMatch && dateMatch && descriptionMatch) {
-        console.log(`✅ Match exato encontrado!`, {
-          bankId: bankTxn.id,
-          systemId: systemTxn.id,
-          score: 100
-        });
+        // Se os sinais são opostos, verificar se é transferência
+        if (!sameSinal) {
+          const isTransferCandidate = this.hasTransferKeywords(bankTxn) || this.hasTransferKeywords(systemTxn);
+          if (isTransferCandidate) {
+            console.log(`🔄 Sinais opostos com termos de transferência - será analisado como transferência`);
+            continue; // Deixar para análise de transferência
+          }
+        }
 
-        return {
-          bankTransaction: bankTxn,
-          systemTransaction: systemTxn,
-          status: 'conciliado',
-          matchScore: 100,
-          matchReason: 'Valor, data e descrição idênticos',
-          confidenceLevel: 'high',
-          matchType: 'exact'
-        };
+        // Para match exato, aceitar mesmo sinal ou ser transferência válida
+        if (sameSinal || (!sameSinal && (this.hasTransferKeywords(bankTxn) || this.hasTransferKeywords(systemTxn)))) {
+          console.log(`✅ Match exato encontrado!`, {
+            bankId: bankTxn.id,
+            systemId: systemTxn.id,
+            score: 100,
+            sameSinal
+          });
+
+          return {
+            bankTransaction: bankTxn,
+            systemTransaction: systemTxn,
+            status: 'conciliado',
+            matchScore: 100,
+            matchReason: 'Valor, data e descrição idênticos',
+            confidenceLevel: 'high',
+            matchType: 'exact'
+          };
+        }
       }
     }
 
@@ -261,7 +352,8 @@ export class MatchingEngine {
   }
 
   /**
-   * Regra de matching por valor e data com tolerância (SUGERIDO)
+   * ✅ REGRA DE MATCHING POR VALOR E DATA COM TOLERÂNCIA CONFIGURÁVEL
+   * Implementa validação rigorosa de "mesmo sinal" conforme documentação
    */
   private applyValueDateRule(
     bankTxn: BankTransaction,
@@ -269,11 +361,15 @@ export class MatchingEngine {
     rule: MatchingRule,
     usedTransactions: Set<string>
   ): MatchResult | null {
-    const { tolerancia_valor = 1, tolerancia_dias = 3 } = rule.parametros; // Valores padrão mais conservadores
+    // ✅ Usar configurações da regra ou valores padrão da documentação
+    const tolerancia_valor = rule.parametros.tolerancia_valor || DEFAULT_MATCHING_CONFIG.sugestao.tolerancia_valor_percentual;
+    const tolerancia_dias = rule.parametros.tolerancia_dias || DEFAULT_MATCHING_CONFIG.sugestao.tolerancia_dias;
+    const tolerancia_absoluta = DEFAULT_MATCHING_CONFIG.sugestao.tolerancia_valor_absoluto;
 
-    console.log(`🎯 Aplicando regra valor+data para transação ${bankTxn.id}:`, {
-      tolerancia_valor,
-      tolerancia_dias,
+    console.log(`🎯 Aplicando regra valor+data RIGOROSA para transação ${bankTxn.id}:`, {
+      tolerancia_valor: `${tolerancia_valor}%`,
+      tolerancia_absoluta: `R$ ${tolerancia_absoluta}`,
+      tolerancia_dias: `${tolerancia_dias} dias`,
       memo: bankTxn.memo,
       amount: bankTxn.amount,
       posted_at: bankTxn.posted_at
@@ -282,13 +378,30 @@ export class MatchingEngine {
     for (const systemTxn of systemTransactions) {
       if (usedTransactions.has(systemTxn.id)) continue;
 
-      // Verificar tolerância de valor (percentual ou valor absoluto pequeno)
+      // ✅ CRITÉRIO 1: MESMO SINAL (entrada/saída) - OBRIGATÓRIO PARA SUGESTÕES
+      const bankIsPositive = bankTxn.amount >= 0;
+      const systemIsPositive = systemTxn.valor >= 0;
+      const sameSinal = bankIsPositive === systemIsPositive;
+      
+      if (!sameSinal) {
+        console.log(`🚫 CRITÉRIO MESMO SINAL FALHOU:`, {
+          systemId: systemTxn.id,
+          bankAmount: bankTxn.amount,
+          systemAmount: systemTxn.valor,
+          bankSign: bankIsPositive ? 'positivo' : 'negativo',
+          systemSign: systemIsPositive ? 'positivo' : 'negativo',
+          reason: 'Sinais opostos - seria analisado como transferência ou sem match'
+        });
+        continue; // ✅ BLOQUEAR sugestão se sinais são opostos
+      }
+
+      // ✅ CRITÉRIO 2: Verificar tolerância de valor (percentual E absoluta)
       const valueTolerancePercent = (Math.abs(systemTxn.valor) * tolerancia_valor) / 100;
-      const valueToleranceAbsolute = Math.max(valueTolerancePercent, 0.10); // Mínimo 10 centavos
+      const valueToleranceAbsolute = Math.max(valueTolerancePercent, tolerancia_absoluta);
       const valueDiff = Math.abs(bankTxn.amount - systemTxn.valor);
       const amountMatch = valueDiff <= valueToleranceAbsolute;
 
-      // Verificar tolerância de data (alguns dias permitidos)
+      // ✅ CRITÉRIO 3: Verificar tolerância de data
       const dateMatch = this.isWithinDateRange(
         bankTxn.posted_at, 
         systemTxn.data_lancamento, 
@@ -297,7 +410,7 @@ export class MatchingEngine {
 
       const dateDiff = this.getDaysDifference(bankTxn.posted_at, systemTxn.data_lancamento);
 
-      console.log(`📊 Verificando lançamento ${systemTxn.id}:`, {
+      console.log(`📊 Verificando lançamento ${systemTxn.id} (MESMO SINAL):`, {
         descricao: systemTxn.descricao,
         valor: systemTxn.valor,
         data_lancamento: systemTxn.data_lancamento,
@@ -306,40 +419,53 @@ export class MatchingEngine {
         amountMatch,
         dateDiff,
         tolerancia_dias,
-        dateMatch
+        dateMatch,
+        sameSinal: '✅',
+        bankSign: bankIsPositive ? '+' : '-',
+        systemSign: systemIsPositive ? '+' : '-'
       });
 
-      if (amountMatch && dateMatch) {
+      // ✅ CRITÉRIO 4: NÃO deve atender aos requisitos de transferência
+      const isTransferCandidate = this.hasTransferKeywords(bankTxn) || this.hasTransferKeywords(systemTxn);
+      
+      if (isTransferCandidate && !sameSinal) {
+        console.log(`🔄 Candidato a transferência detectado - será analisado na fase de transferências`);
+        continue; // Deixar para a fase de transferências
+      }
+
+      // ✅ APLICAR TODOS OS CRITÉRIOS: valor + data + mesmo sinal
+      if (amountMatch && dateMatch && sameSinal) {
         // Calcular score baseado na precisão
-        
-        // Score menor para diferenças maiores
         let score = 90;
         if (valueDiff > 0.01) score -= (valueDiff / Math.abs(systemTxn.valor)) * 20; // Penalizar diferença de valor
         if (dateDiff > 0) score -= dateDiff * 5; // Penalizar diferença de data (5 pontos por dia)
         
         score = Math.max(score, 60); // Score mínimo de 60 para sugestões
 
-        console.log(`✅ Match por regra valor+data encontrado!`, {
+        console.log(`✅ SUGESTÃO VÁLIDA encontrada! (TODOS os critérios atendidos)`, {
           bankId: bankTxn.id,
           systemId: systemTxn.id,
           score: Math.round(score),
-          valueDiff,
-          dateDiff
+          criterios: {
+            valor: `✅ Diferença: R$ ${valueDiff.toFixed(2)} (tolerância: R$ ${valueToleranceAbsolute.toFixed(2)})`,
+            data: `✅ Diferença: ${dateDiff} dias (tolerância: ${tolerancia_dias} dias)`,
+            sinal: `✅ Mesmo sinal (${bankIsPositive ? '+' : '-'})`
+          }
         });
 
         return {
           bankTransaction: bankTxn,
           systemTransaction: systemTxn,
-          status: 'sugerido', // Sempre sugerido quando há tolerância
+          status: 'sugerido',
           matchScore: Math.round(score),
-          matchReason: `Data e valor semelhantes (±${tolerancia_valor}%, ±${tolerancia_dias} dias)`,
+          matchReason: `Data próxima, valor próximo e mesmo sinal (±${tolerancia_valor}%, ±R$${tolerancia_absoluta}, ±${tolerancia_dias} dias)`,
           confidenceLevel: score >= 80 ? 'high' : 'medium',
           matchType: 'fuzzy'
         };
       }
     }
 
-    console.log(`❌ Nenhum match por regra valor+data encontrado para transação ${bankTxn.id}`);
+    console.log(`❌ Nenhuma sugestão válida encontrada para transação ${bankTxn.id} (critérios rigorosos aplicados)`);
     return null;
   }
 
@@ -395,90 +521,124 @@ export class MatchingEngine {
   }
 
   /**
-   * Detecta transferências com lógica aprimorada
+   * ✅ DETECTA TRANSFERÊNCIAS COM REGRAS RIGOROSAS CONFORME DOCUMENTAÇÃO
+   * Critérios obrigatórios (TODOS simultâneos):
+   * 1. Descrição contendo termos de transferência
+   * 2. Data exatamente igual (mesmo dia)
+   * 3. Valores iguais e opostos
    */
   private detectTransfer(
     bankTxn: BankTransaction,
     systemTransactions: SystemTransaction[],
     usedTransactions: Set<string>
   ): MatchResult | null {
-    const transferKeywords = [
-      'TRANSFER', 'TRANSFERENCIA', 'TRANSFERÊNCIA',
-      'TRANSF-', 'TRANSF ', 'DOC', 'TED', 'PIX',
-      'ENVIO', 'RECEBIMENTO', 'REMESSA', 'TEF',
-      'TRANSFER NCIA ENTRADA', 'TRANSFER NCIA SAIDA',
-      '[TRANSFER NCIA ENTRADA]', '[TRANSFER NCIA SAIDA]',
-      'TRANSFERÊNCIA ENTRADA', 'TRANSFERÊNCIA SAIDA'
-    ];
+    console.log(`🔄 Iniciando detecção de transferência para transação ${bankTxn.id}`);
     
-    const bankDescription = bankTxn.memo?.trim() || bankTxn.payee?.trim() || '';
-    const memo = bankDescription.toUpperCase();
+    // ✅ CRITÉRIO 1: DESCRIÇÃO COM TERMOS DE TRANSFERÊNCIA (OFX OU Sistema)
+    const hasOFXTransferTerms = this.hasTransferKeywords(bankTxn);
+    
+    console.log(`📋 Verificação de termos no OFX:`, {
+      bankId: bankTxn.id,
+      memo: bankTxn.memo,
+      payee: bankTxn.payee,
+      hasOFXTransferTerms
+    });
 
-    // Verificar se é transferência por palavras-chave (mais abrangente)
-    const isTransfer = transferKeywords.some(keyword => memo.includes(keyword));
-
-    if (isTransfer) {
-      console.log(`🔄 Transferência detectada no OFX: "${bankDescription}"`);
+    // Buscar lançamentos no sistema que atendam aos critérios
+    for (const systemTxn of systemTransactions) {
+      if (usedTransactions.has(systemTxn.id)) continue;
       
-      // Buscar lançamentos de transferência no sistema com mesmo valor e data próxima
-      for (const systemTxn of systemTransactions) {
-        if (usedTransactions.has(systemTxn.id)) continue;
-        
-        // Verificar se é transferência no sistema
-        const systemDesc = (systemTxn.descricao || '').toUpperCase();
-        const systemDoc = (systemTxn.numero_documento || '').toUpperCase();
-        const isSystemTransfer = systemTxn.tipo === 'transferencia' ||
-                               transferKeywords.some(keyword => 
-                                 systemDesc.includes(keyword) || systemDoc.includes(keyword)
-                               );
-        
-        if (!isSystemTransfer) continue;
-        
-        // Verificar valor exato ou muito próximo
-        const valueMatch = Math.abs(Math.abs(bankTxn.amount) - Math.abs(systemTxn.valor)) < 0.01;
-        
-        // Verificar data próxima (até 3 dias de diferença para transferências)
-        const dateMatch = this.isWithinDateRange(bankTxn.posted_at, systemTxn.data_lancamento, 3);
-        
-        // Verificar se o sentido está correto (entrada no OFX = saída no sistema ou vice-versa)
-        const correctDirection = this.isCorrectTransferDirection(bankTxn, systemTxn);
-        
-        console.log(`📊 Comparando transferência:`, {
-          bankMemo: bankDescription,
-          systemDesc: systemTxn.descricao,
-          valueMatch,
-          dateMatch,
-          correctDirection,
-          bankAmount: bankTxn.amount,
-          systemAmount: systemTxn.valor
-        });
-        
-        if (valueMatch && dateMatch) { // Removendo verificação de direção para ser mais flexível
-          console.log(`✅ Match de transferência encontrado!`);
-          return {
-            bankTransaction: bankTxn,
-            systemTransaction: systemTxn,
-            status: 'transferencia',
-            matchScore: 95,
-            matchReason: 'Transferência identificada - valor e data corretos',
-            confidenceLevel: 'high',
-            matchType: 'rule'
-          };
-        }
+      const hasSystemTransferTerms = this.hasTransferKeywords(systemTxn);
+      
+      console.log(`📋 Analisando lançamento sistema ${systemTxn.id}:`, {
+        descricao: systemTxn.descricao,
+        tipo: systemTxn.tipo,
+        numero_documento: systemTxn.numero_documento,
+        hasSystemTransferTerms
+      });
+      
+      // ✅ CRITÉRIO 1: PELO MENOS UM LADO deve conter termos de transferência
+      const criterio1_TermosTransferencia = hasOFXTransferTerms || hasSystemTransferTerms;
+      
+      if (!criterio1_TermosTransferencia) {
+        console.log(`🚫 Critério 1 FALHOU - Nenhum lado contém termos de transferência`);
+        continue;
       }
       
-      // Se não encontrou correspondência exata, marcar como transferência sem match
-      console.log(`🔍 Transferência detectada mas sem match no sistema`);
+      // ✅ CRITÉRIO 2: DATA EXATAMENTE IGUAL (mesmo dia) - ZERO tolerância
+      const criterio2_DataExata = this.isSameDate(bankTxn.posted_at, systemTxn.data_lancamento);
+      
+      if (!criterio2_DataExata) {
+        console.log(`🚫 Critério 2 FALHOU - Datas não são exatamente iguais:`, {
+          bankDate: bankTxn.posted_at,
+          systemDate: systemTxn.data_lancamento
+        });
+        continue;
+      }
+      
+      // ✅ CRITÉRIO 3: VALORES IGUAIS E OPOSTOS
+      const bankAmount = bankTxn.amount;
+      const systemAmount = systemTxn.valor;
+      const absoluteBankAmount = Math.abs(bankAmount);
+      const absoluteSystemAmount = Math.abs(systemAmount);
+      
+      // 3.1: Valores devem ser iguais em absoluto (tolerância de 1 centavo)
+      const valoresIguais = Math.abs(absoluteBankAmount - absoluteSystemAmount) <= 0.01;
+      
+      // 3.2: Sinais devem ser opostos (um positivo, outro negativo)
+      const bankIsPositive = bankAmount >= 0;
+      const systemIsPositive = systemAmount >= 0;
+      const sinaisOpostos = bankIsPositive !== systemIsPositive;
+      
+      const criterio3_ValoresIguaisOpostos = valoresIguais && sinaisOpostos;
+      
+      if (!criterio3_ValoresIguaisOpostos) {
+        console.log(`🚫 Critério 3 FALHOU - Valores não são iguais e opostos:`, {
+          bankAmount,
+          systemAmount,
+          valoresIguais,
+          sinaisOpostos,
+          bankSign: bankIsPositive ? '+' : '-',
+          systemSign: systemIsPositive ? '+' : '-'
+        });
+        continue;
+      }
+      
+      // ✅ TODOS OS 3 CRITÉRIOS ATENDIDOS - TRANSFERÊNCIA VÁLIDA
+      console.log(`✅ TRANSFERÊNCIA VÁLIDA DETECTADA - Todos os critérios atendidos:`, {
+        bankId: bankTxn.id,
+        systemId: systemTxn.id,
+        criterio1_TermosTransferencia: '✅',
+        criterio2_DataExata: '✅',
+        criterio3_ValoresIguaisOpostos: '✅',
+        detalhes: {
+          hasOFXTerms: hasOFXTransferTerms,
+          hasSystemTerms: hasSystemTransferTerms,
+          bankDate: bankTxn.posted_at,
+          systemDate: systemTxn.data_lancamento,
+          bankAmount,
+          systemAmount
+        }
+      });
+      
       return {
         bankTransaction: bankTxn,
+        systemTransaction: systemTxn,
         status: 'transferencia',
-        matchScore: 75,
-        matchReason: 'Transferência detectada por descrição - aguardando lançamento no sistema',
-        confidenceLevel: 'medium',
+        matchScore: 95,
+        matchReason: 'Transferência válida - descrição com termo + mesma data + valores iguais e opostos',
+        confidenceLevel: 'high',
         matchType: 'rule'
       };
     }
-
+    
+    // ✅ NOVA REGRA: OFX com termos sem correspondência no sistema = sem_match
+    if (hasOFXTransferTerms) {
+      console.log(`❌ Transferência OFX sem correspondência no sistema - será marcado como sem_match`);
+      return null; // Não retorna transferência - será tratado como sem_match na fase 4
+    }
+    
+    console.log(`❌ Não é transferência - nenhum critério de transferência atendido`);
     return null;
   }
 
@@ -612,6 +772,69 @@ export class MatchingEngine {
     });
     
     return Math.round(similarity);
+  }
+
+  /**
+   * ✅ FUNÇÃO APRIMORADA: Verifica se transação contém palavras-chave de transferência
+   * Baseada nas regras documentadas e casos reais encontrados
+   */
+  private hasTransferKeywords(transaction: BankTransaction | SystemTransaction): boolean {
+    const transferKeywords = [
+      // Palavras principais
+      'TRANSFER', 'TRANSFERENCIA', 'TRANSFERÊNCIA',
+      'TRANSF-', 'TRANSF ', 'TRANSF_',
+      
+      // Tipos de transferência
+      'TED', 'DOC', 'PIX', 'TEF',
+      
+      // Variações encontradas nos dados reais
+      'TRANSFER NCIA ENTRADA', 'TRANSFER NCIA SAIDA', 'TRANSFER NCIA SA DA',
+      '[TRANSFER NCIA ENTRADA]', '[TRANSFER NCIA SA DA]',
+      'TRANSFERÊNCIA ENTRADA', 'TRANSFERÊNCIA SAIDA',
+      
+      // Outros termos comuns
+      'ENVIO', 'RECEBIMENTO', 'REMESSA',
+      'TRANSFERENCIA BANCARIA', 'TRANSFERENCIA ENTRE CONTAS'
+    ];
+
+    let description = '';
+    let documentNumber = '';
+    let isSystemTransferType = false;
+    
+    if ('memo' in transaction) {
+      // BankTransaction
+      description = `${transaction.memo || ''} ${transaction.payee || ''} ${transaction.fit_id || ''}`.toUpperCase().trim();
+    } else {
+      // SystemTransaction
+      description = `${transaction.descricao || ''}`.toUpperCase().trim();
+      documentNumber = `${transaction.numero_documento || ''}`.toUpperCase().trim();
+      isSystemTransferType = transaction.tipo === 'transferencia';
+    }
+
+    // Para transações do sistema, tipo 'transferencia' já é suficiente
+    if (isSystemTransferType) {
+      console.log(`✅ Sistema: tipo='transferencia' detectado`);
+      return true;
+    }
+
+    // Verificar palavras-chave na descrição
+    const hasKeywordInDescription = transferKeywords.some(keyword => description.includes(keyword));
+    
+    // Verificar palavras-chave no número do documento (apenas para sistema)
+    const hasKeywordInDocument = documentNumber ? transferKeywords.some(keyword => documentNumber.includes(keyword)) : false;
+
+    const result = hasKeywordInDescription || hasKeywordInDocument;
+    
+    console.log(`🔍 Verificação de termos de transferência:`, {
+      description: description.substring(0, 50) + (description.length > 50 ? '...' : ''),
+      documentNumber,
+      hasKeywordInDescription,
+      hasKeywordInDocument,
+      isSystemTransferType,
+      result
+    });
+
+    return result;
   }
 
   /**

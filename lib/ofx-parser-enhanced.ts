@@ -301,9 +301,29 @@ export class OFXParserEnhanced {
 
       console.log('📋 Dados da conta do sistema:', contaData);
 
-      // Validar correspondência do banco
-      const bankMatches = contaData.bancos.codigo === ofxBankId || 
-                         contaData.bancos.codigo.padStart(3, '0') === ofxBankId.padStart(3, '0');
+      // Validar correspondência do banco - Banco do Brasil tem múltiplos códigos
+      const systemBankCode = contaData.bancos.codigo;
+      
+      // Mapeamento de códigos do Banco do Brasil
+      const bancoBrasilCodes = ['001', '01', '1', '004', '04', '4'];
+      
+      const bankMatches = 
+        // Comparação direta
+        systemBankCode === ofxBankId || 
+        systemBankCode.padStart(3, '0') === ofxBankId.padStart(3, '0') ||
+        // Banco do Brasil - aceitar qualquer código válido
+        (bancoBrasilCodes.includes(systemBankCode) && bancoBrasilCodes.includes(ofxBankId)) ||
+        // Verificação pelo nome do banco
+        (contaData.bancos.nome?.toLowerCase().includes('banco do brasil') && 
+         bancoBrasilCodes.includes(ofxBankId));
+
+      console.log('🔍 Validação do banco:', {
+        ofxBankId,
+        systemBankCode,
+        systemBankName: contaData.bancos.nome,
+        bankMatches,
+        isBancoBrasil: bancoBrasilCodes.includes(ofxBankId)
+      });
 
       if (!bankMatches) {
         return {
@@ -324,9 +344,22 @@ export class OFXParserEnhanced {
 
       // Validar correspondência da conta (número da conta com possível dígito)
       const systemAccount = contaData.conta + (contaData.digito ? contaData.digito : '');
-      const accountMatches = systemAccount === ofxAccountId || 
-                           contaData.conta === ofxAccountId ||
-                           systemAccount.replace(/[^0-9]/g, '') === ofxAccountId.replace(/[^0-9]/g, '');
+      const systemAccountOnly = contaData.conta;
+      
+      const accountMatches = 
+        systemAccount === ofxAccountId || 
+        systemAccountOnly === ofxAccountId ||
+        systemAccount.replace(/[^0-9]/g, '') === ofxAccountId.replace(/[^0-9]/g, '') ||
+        // Comparação mais flexível removendo zeros à esquerda
+        parseInt(systemAccount, 10) === parseInt(ofxAccountId, 10) ||
+        parseInt(systemAccountOnly, 10) === parseInt(ofxAccountId, 10);
+
+      console.log('🔍 Validação da conta:', {
+        ofxAccountId,
+        systemAccount,
+        systemAccountOnly,
+        accountMatches
+      });
 
       if (!accountMatches) {
         return {
@@ -345,7 +378,11 @@ export class OFXParserEnhanced {
         };
       }
 
-      console.log('✅ OFX corresponde à conta selecionada');
+      console.log('✅ OFX corresponde à conta selecionada:', {
+        banco: `${ofxBankId} → ${contaData.bancos.codigo} (${contaData.bancos.nome})`,
+        conta: `${ofxAccountId} → ${systemAccount}`
+      });
+      
       return { 
         valid: true,
         accountInfo: {

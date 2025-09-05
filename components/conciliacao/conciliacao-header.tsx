@@ -172,9 +172,9 @@ export function ConciliacaoHeader({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="flex flex-wrap items-end gap-4">
           {/* Seleção de Conta Bancária */}
-          <div className="space-y-2">
+          <div className="space-y-2 flex-shrink-0">
             <label className="text-sm font-medium">Conta Bancária</label>
             <Select 
               value={contaSelecionada?.id || ''} 
@@ -184,7 +184,7 @@ export function ConciliacaoHeader({
               }}
               disabled={loading}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-fit min-w-[200px]">
                 <SelectValue placeholder="Selecione uma conta bancária" />
               </SelectTrigger>
               <SelectContent>
@@ -198,7 +198,7 @@ export function ConciliacaoHeader({
           </div>
 
           {/* Seleção de Período */}
-          <div className="space-y-2">
+          <div className="space-y-2 flex-shrink-0">
             <label className="text-sm font-medium">Período</label>
             <div className="flex gap-2">
               <Select 
@@ -239,29 +239,30 @@ export function ConciliacaoHeader({
               </Select>
             </div>
           </div>
-        </div>
 
-        {/* Botão Importar OFX */}
-        {contaSelecionada && (
-          <div className="flex justify-end">
-            <div className="relative">
-              <input
-                type="file"
-                accept=".ofx,.qfx"
-                onChange={handleUploadOFX}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                disabled={uploading}
-              />
-              <Button 
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-                disabled={uploading}
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                {uploading ? 'Importando...' : 'Importar OFX'}
-              </Button>
+          {/* Botão Importar OFX */}
+          {contaSelecionada && (
+            <div className="space-y-2 flex-shrink-0">
+              <label className="text-sm font-medium text-transparent">Ação</label>
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".ofx,.qfx"
+                  onChange={handleUploadOFX}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  disabled={uploading}
+                />
+                <Button 
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  disabled={uploading}
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  {uploading ? 'Importando...' : 'Importar OFX'}
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </CardContent>
     </Card>
   );

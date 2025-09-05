@@ -479,55 +479,58 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
       // ✅ CORREÇÃO COMPLETA: Mapear status baseado EXCLUSIVAMENTE no banco
       const correctedPairs = (data.pairs || []).map((pair: any) => {
         const bankStatus = pair.bankTransaction?.status_conciliacao;
+        const reconciliationStatus = pair.bankTransaction?.reconciliation_status;
         const hasSystemMatch = !!pair.systemTransaction;
-        const isTransfer = hasSystemMatch && isValidTransfer(pair.bankTransaction, pair.systemTransaction);
         
         let frontendStatus = 'sem_match'; // padrão
         
-        console.log('📊 Corrigindo status do pair:', {
+        console.log('📊 Corrigindo status do pair com reconciliation_status:', {
           bankTransactionId: pair.bankTransaction?.id,
           bankStatus,
+          reconciliationStatus,
           hasSystemMatch,
-          isTransfer,
           originalStatus: pair.status
         });
         
-        // ✅ MAPEAMENTO CORRETO baseado no status do banco + validação de transferência
-        switch (bankStatus) {
-          case 'conciliado':
-            frontendStatus = 'conciliado'; // Verde - já foi conciliado
-            break;
-            
-          case 'pendente':
-            if (isTransfer) {
-              frontendStatus = 'transferencia'; // Azul - transferência identificada
+        // ✅ PRIORIDADE: Se já foi conciliado pelo usuário, mostrar verde
+        if (bankStatus === 'conciliado') {
+          frontendStatus = 'conciliado'; // Verde - já foi conciliado pelo usuário
+        }
+        // ✅ NOVA LÓGICA: Para transações pendentes, usar reconciliation_status do banco
+        else if (bankStatus === 'pendente') {
+          switch (reconciliationStatus) {
+            case 'transferencia':
+              frontendStatus = 'transferencia'; // Azul - transferência identificada automaticamente
               console.log('🔵 Transferência identificada:', {
                 bankId: pair.bankTransaction?.id,
-                systemId: pair.systemTransaction?.id,
-                bankMemo: pair.bankTransaction?.memo,
-                systemDesc: pair.systemTransaction?.descricao
+                fit_id: pair.bankTransaction?.fit_id,
+                payee: pair.bankTransaction?.payee,
+                reconciliationStatus
               });
-            } else if (hasSystemMatch) {
-              frontendStatus = 'sugerido'; // Amarelo - sugestão de match
-            } else {
+              break;
+            case 'sugerido':
+              frontendStatus = 'sugerido'; // Amarelo - sugestão de match automática
+              break;
+            case 'sem_match':
+            default:
               frontendStatus = 'sem_match'; // Cinza - sem match
-            }
-            break;
-            
-          case 'ignorado':
-            frontendStatus = 'sem_match'; // Cinza - foi ignorado
-            break;
-            
-          default:
-            // Status não reconhecido - tratar como pendente sem match
-            frontendStatus = 'sem_match';
+              break;
+          }
+        }
+        // Casos especiais
+        else if (bankStatus === 'ignorado') {
+          frontendStatus = 'sem_match'; // Cinza - foi ignorado pelo usuário
+        }
+        else {
+          // Status não reconhecido - tratar como pendente sem match
+          frontendStatus = 'sem_match';
         }
         
-        console.log('✅ Status corrigido:', {
+        console.log('✅ Status corrigido com reconciliation_status:', {
           bankTransactionId: pair.bankTransaction?.id,
           bankStatus,
+          reconciliationStatus,
           frontendStatus,
-          isTransfer,
           shouldShowConciliarButton: frontendStatus === 'sugerido' || frontendStatus === 'transferencia'
         });
         
@@ -3262,51 +3265,47 @@ function ReconciliationCard({
     return isReconciled;
   };
 
-  // ✅ FUNÇÃO REVISADA: Cores dos cards conforme especificação
+  // ✅ FUNÇÃO CORRIGIDA: Cores baseadas no reconciliation_status do banco
   const getCardBackgroundColor = (status: string, pair: ReconciliationPair) => {
-    console.log('🎨 Determinando cor do card:', {
+    const bankStatus = pair.bankTransaction?.status_conciliacao;
+    const reconciliationStatus = pair.bankTransaction?.reconciliation_status;
+    
+    console.log('🎨 Determinando cor do card (atualizado):', {
       pairId: pair.id,
       frontendStatus: status,
-      bankStatus: pair.bankTransaction?.status_conciliacao,
-      reconciliationStatus: pair.bankTransaction?.reconciliation_status,
+      bankStatus,
+      reconciliationStatus,
       hasSystemMatch: !!pair.systemTransaction
     });
 
     // ✅ REGRA 1: IGNORADOS - Prioridade máxima 
-    if (pair.bankTransaction?.status_conciliacao === 'ignorado') {
+    if (bankStatus === 'ignorado') {
       console.log('🎨 Aplicando cor IGNORADO (cinza escuro)');
       return 'bg-gray-200 border-gray-400 shadow-sm opacity-60'; // CINZA ESCURO = IGNORADO
     }
     
     // ✅ REGRA 2: VERDE apenas para conciliados (baseado no banco)
-    if (pair.bankTransaction?.status_conciliacao === 'conciliado') {
+    if (bankStatus === 'conciliado') {
       console.log('🎨 Aplicando cor CONCILIADO (verde)');
       return 'bg-green-100 border-green-400 shadow-lg'; // VERDE = CONCILIADO
     }
     
-    // ✅ REGRA 3: AZUL apenas para transferências (match identificado como transferência)
-    const isTransfer = isValidTransfer(pair.bankTransaction, pair.systemTransaction);
-    if (isTransfer && pair.bankTransaction?.status_conciliacao === 'pendente') {
-      console.log('🎨 Aplicando cor TRANSFERÊNCIA (azul)');
-      return 'bg-blue-100 border-blue-400 shadow-md'; // AZUL = TRANSFERÊNCIA
-    }
-    
-    // ✅ REGRA 4: Para pendentes com match (sugestão)
-    if (pair.bankTransaction?.status_conciliacao === 'pendente' && pair.systemTransaction) {
-      console.log('🎨 Aplicando cor SUGESTÃO (amarelo)');
-      return 'bg-yellow-50 border-yellow-300 hover:bg-yellow-100'; // AMARELO = SUGESTÃO
-    }
-    
-    // ✅ REGRA 5: Para pendentes sem match (cards brancos conforme especificação)
-    if (pair.bankTransaction?.status_conciliacao === 'pendente' && !pair.systemTransaction) {
-      console.log('🎨 Aplicando cor SEM MATCH (branco)');
-      return 'bg-white border-gray-200 hover:bg-gray-50'; // BRANCO = SEM MATCH
-    }
-    
-    // ✅ REGRA 6: Para status frontends sem match (cards brancos conforme especificação)
-    if (status === 'sem_match' || status === 'no_match') {
-      console.log('🎨 Aplicando cor SEM MATCH via status frontend (branco)');
-      return 'bg-white border-gray-200 hover:bg-gray-50'; // BRANCO = SEM MATCH
+    // ✅ REGRA 3: Para pendentes, usar reconciliation_status do banco
+    if (bankStatus === 'pendente') {
+      switch (reconciliationStatus) {
+        case 'transferencia':
+          console.log('🎨 Aplicando cor TRANSFERÊNCIA (azul) - via reconciliation_status');
+          return 'bg-blue-100 border-blue-400 shadow-md'; // AZUL = TRANSFERÊNCIA
+          
+        case 'sugerido':
+          console.log('🎨 Aplicando cor SUGESTÃO (amarelo) - via reconciliation_status');
+          return 'bg-yellow-50 border-yellow-300 hover:bg-yellow-100'; // AMARELO = SUGESTÃO
+          
+        case 'sem_match':
+        default:
+          console.log('🎨 Aplicando cor SEM MATCH (branco) - via reconciliation_status');
+          return 'bg-white border-gray-200 hover:bg-gray-50'; // BRANCO = SEM MATCH
+      }
     }
     
     // Padrão (não deveria chegar aqui)

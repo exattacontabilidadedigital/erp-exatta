@@ -467,60 +467,27 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
       console.log('✅ Usando dados diretamente da API (estado real do banco de dados)');
       
       // Garantir que o status dos pairs reflita exatamente o status_conciliacao do banco
-      // ✅ CORREÇÃO COMPLETA: Mapear status baseado EXCLUSIVAMENTE no banco
       const correctedPairs = (data.pairs || []).map((pair: any) => {
         const bankStatus = pair.bankTransaction?.status_conciliacao;
-        const hasSystemMatch = !!pair.systemTransaction;
-        const isTransfer = hasSystemMatch && isValidTransfer(pair.bankTransaction, pair.systemTransaction);
+        let frontendStatus = 'suggested'; // padrão
         
-        let frontendStatus = 'sem_match'; // padrão
-        
-        console.log('📊 Corrigindo status do pair:', {
-          bankTransactionId: pair.bankTransaction?.id,
-          bankStatus,
-          hasSystemMatch,
-          isTransfer,
-          originalStatus: pair.status
-        });
-        
-        // ✅ MAPEAMENTO CORRETO baseado no status do banco + validação de transferência
+        // Mapear status do banco para status do frontend
         switch (bankStatus) {
           case 'conciliado':
-            frontendStatus = 'conciliado'; // Verde - já foi conciliado
+            frontendStatus = 'matched';
             break;
-            
           case 'pendente':
-            if (isTransfer) {
-              frontendStatus = 'transferencia'; // Azul - transferência identificada
-              console.log('🔵 Transferência identificada:', {
-                bankId: pair.bankTransaction?.id,
-                systemId: pair.systemTransaction?.id,
-                bankMemo: pair.bankTransaction?.memo,
-                systemDesc: pair.systemTransaction?.descricao
-              });
-            } else if (hasSystemMatch) {
-              frontendStatus = 'sugerido'; // Amarelo - sugestão de match
-            } else {
-              frontendStatus = 'sem_match'; // Cinza - sem match
-            }
+            // Verificar se é transferência válida
+            const isTransfer = isValidTransfer(pair.bankTransaction, pair.systemTransaction);
+            frontendStatus = isTransfer ? 'transfer' : 
+                           pair.systemTransaction ? 'suggested' : 'no_match';
             break;
-            
           case 'ignorado':
-            frontendStatus = 'sem_match'; // Cinza - foi ignorado
+            frontendStatus = 'no_match';
             break;
-            
           default:
-            // Status não reconhecido - tratar como pendente sem match
-            frontendStatus = 'sem_match';
+            frontendStatus = pair.systemTransaction ? 'suggested' : 'no_match';
         }
-        
-        console.log('✅ Status corrigido:', {
-          bankTransactionId: pair.bankTransaction?.id,
-          bankStatus,
-          frontendStatus,
-          isTransfer,
-          shouldShowConciliarButton: frontendStatus === 'sugerido' || frontendStatus === 'transferencia'
-        });
         
         return {
           ...pair,
@@ -528,48 +495,36 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
         };
       });
       
-      // ✅ STATUS JÁ CORRIGIDOS - USAR TODOS OS PAIRS SEM FILTROS
-      const filteredPairs = correctedPairs;
-
-
-
-          console.warn('� REMOVENDO PAIR INCONSISTENTE:', {
-
-
-          });
-
-
-      
-      console.log('� Status finais baseados exclusivamente no banco:', {
-        totalPairs: filteredPairs.length,
-        statusDistribution: filteredPairs.reduce((acc: any, pair: any) => {
+      console.log('🔍 Status corrigidos baseados no banco:', {
+        totalPairs: correctedPairs.length,
+        statusDistribution: correctedPairs.reduce((acc: any, pair: any) => {
           acc[pair.status] = (acc[pair.status] || 0) + 1;
           return acc;
         }, {}),
-        bankStatusDistribution: filteredPairs.reduce((acc: any, pair: any) => {
+        bankStatusDistribution: correctedPairs.reduce((acc: any, pair: any) => {
           const status = pair.bankTransaction?.status_conciliacao || 'undefined';
           acc[status] = (acc[status] || 0) + 1;
           return acc;
         }, {})
       });
       
-      setPairs(filteredPairs);
+      setPairs(correctedPairs);
       
       // ✅ CORREÇÃO: Recalcular summary baseado na ÚNICA fonte da verdade + reconciliation_status
-      const totalPairs = filteredPairs.length;
-      const conciliados = filteredPairs.filter((p: any) => p.bankTransaction?.status_conciliacao === 'conciliado').length;
-      const sugeridos = filteredPairs.filter((p: any) => 
+      const totalPairs = correctedPairs.length;
+      const conciliados = correctedPairs.filter((p: any) => p.bankTransaction?.status_conciliacao === 'conciliado').length;
+      const sugeridos = correctedPairs.filter((p: any) => 
         p.bankTransaction?.status_conciliacao === 'pendente' && 
         p.bankTransaction?.reconciliation_status !== 'ignored' && 
         p.systemTransaction
       ).length;
-      const transferencias = filteredPairs.filter((p: any) => p.status === 'transfer').length;
-      const sem_match = filteredPairs.filter((p: any) => 
+      const transferencias = correctedPairs.filter((p: any) => p.status === 'transfer').length;
+      const sem_match = correctedPairs.filter((p: any) => 
         (!p.systemTransaction && p.bankTransaction?.reconciliation_status !== 'ignored') || 
         p.bankTransaction?.reconciliation_status === 'ignored'
       ).length;
-      const conflitos = filteredPairs.filter((p: any) => p.status === 'conflito').length;
-      const pendentes = filteredPairs.filter((p: any) => 
+      const conflitos = correctedPairs.filter((p: any) => p.status === 'conflito').length;
+      const pendentes = correctedPairs.filter((p: any) => 
         p.bankTransaction?.status_conciliacao === 'pendente' && 
         p.bankTransaction?.reconciliation_status !== 'ignored' && 
         !p.systemTransaction
@@ -721,137 +676,84 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
     return 'baixo';
   };
 
-  // ✅ Função ATUALIZADA: Validação de transferências conforme especificação
+  // 🔄 Função OTIMIZADA para validação de transferências
   const isValidTransfer = useCallback((
     bankTransaction: BankTransaction | undefined, 
     systemTransaction: SystemTransaction | undefined
   ) => {
     if (!bankTransaction || !systemTransaction) return false;
     
-    console.log('🔍 Verificando regra de transferência para:', {
-      bankId: bankTransaction.id,
-      systemId: systemTransaction.id,
-      bankMemo: bankTransaction.memo || bankTransaction.payee,
-      systemDesc: systemTransaction.descricao,
-      bankAmount: bankTransaction.amount,
-      systemAmount: systemTransaction.valor,
-      bankDate: bankTransaction.posted_at,
-      systemDate: systemTransaction.data_lancamento
-    });
-    
-    // ✅ CRITÉRIO 1: Descrição contendo termos de transferência
+    // Keywords mais abrangentes para identificar transferências
     const TRANSFER_KEYWORDS = [
-      'TRANSF', 'TRANSFERÊNCIA', 'TRANSFERENCIA',
-      'TED', 'DOC', 'PIX TRANSF', 'TRANSFER',
-      'TRANSFER NCIA', 'TRANSFER NCIA ENTRADA', 'TRANSFER NCIA SA DA'
+      // Transferências tradicionais
+      'TRANSFER', 'TRANSFERENCIA', 'TRANSFERÊNCIA', 'TRANSF', 'TED', 'DOC', 'PIX',
+      // Específicas para contas
+      'PARA CONTA', 'DA CONTA', 'ENTRE CONTAS', 'CONTA CORRENTE', 'CONTA POUPANÇA',
+      // Operações bancárias
+      'APLICACAO', 'APLICAÇÃO', 'RESGATE', 'INVESTIMENTO', 'CDB', 'POUPANCA', 'POUPANÇA',
+      // Movimentação interna
+      'MOV.INTERNO', 'MOVIMENTO INTERNO', 'MOVIMENTACAO INTERNA', 'MOVIMENTAÇÃO INTERNA',
+      'TRANSFERENCIA INTERNA', 'TRANSFERÊNCIA INTERNA', 'TRANSF.INTERNA',
+      // Outros indicadores
+      'DEBITO AUTOMATICO', 'DÉBITO AUTOMÁTICO', 'CREDITO EM CONTA', 'CRÉDITO EM CONTA',
+      'SAQUE', 'DEPOSITO', 'DEPÓSITO', 'DINHEIRO', 'CASH', 'ATM', 'CAIXA ELETRONICO',
+      // Bancos específicos
+      'ITAU', 'ITAÚ', 'BRADESCO', 'BANCO DO BRASIL', 'BB', 'SANTANDER', 'CAIXA',
+      'NUBANK', 'INTER', 'C6', 'ORIGINAL', 'SAFRA', 'SICOOB', 'SICREDI',
+      // Envios e recebimentos
+      'ENVIO', 'RECEBIMENTO', 'REMESSA', 'ORDEM DE PAGAMENTO'
     ];
     
-    const hasTransferTerms = (text: string) => {
-      if (!text) return false;
-      const upperText = text.toUpperCase();
-      return TRANSFER_KEYWORDS.some(keyword => upperText.includes(keyword));
-    };
+    // 1. Verificação otimizada de termos de transferência
+    const hasTransferTerms = (text: string) => 
+      TRANSFER_KEYWORDS.some(keyword => text.toUpperCase().includes(keyword));
     
-    // Verificar se PELO MENOS UM dos lançamentos (OFX ou Sistema) contém termos de transferência
     const bankHasTransferTerms = hasTransferTerms(bankTransaction.memo || '') || 
-                                hasTransferTerms(bankTransaction.payee || '') ||
-                                (bankTransaction.fit_id && bankTransaction.fit_id.includes('TRANSF-'));
+                                hasTransferTerms(bankTransaction.payee || '');
     
     const systemHasTransferTerms = systemTransaction.tipo === 'transferencia' ||
                                   hasTransferTerms(systemTransaction.descricao || '') ||
                                   hasTransferTerms(systemTransaction.numero_documento || '');
     
-    const hasAnyTransferTerm = bankHasTransferTerms || systemHasTransferTerms;
+    if (!bankHasTransferTerms && !systemHasTransferTerms) return false;
     
-    if (!hasAnyTransferTerm) {
-      console.log('🚫 Transferência rejeitada - sem termos de transferência:', {
-        bankHasTransferTerms,
-        systemHasTransferTerms,
-        bankTexts: [bankTransaction.memo, bankTransaction.payee, bankTransaction.fit_id],
-        systemTexts: [systemTransaction.descricao, systemTransaction.numero_documento, systemTransaction.tipo]
-      });
-      return false;
-    }
+    // 2. Verificação de valores com tolerância maior para arredondamento
+    const bankAmount = Math.abs(bankTransaction.amount);
+    const systemAmount = Math.abs(systemTransaction.valor);
+    const amountDifference = Math.abs(bankAmount - systemAmount);
+    const amountTolerance = Math.max(bankAmount, systemAmount) * 0.01; // 1% de tolerância
     
-    // ✅ CRITÉRIO 2: Data exatamente igual (mesmo dia)
+    // Valores devem ser iguais (com pequena tolerância para arredondamento)
+    const valuesMatch = amountDifference <= amountTolerance && amountDifference <= 0.01;
+    
+    if (!valuesMatch) return false;
+    
+    // 3. Verificação de contrapartidas mais flexível
+    const isValidCounterpart = (
+      (bankTransaction.transaction_type === 'DEBIT' && systemTransaction.tipo === 'receita') ||
+      (bankTransaction.transaction_type === 'CREDIT' && systemTransaction.tipo === 'despesa') ||
+      (systemTransaction.tipo === 'transferencia' && 
+       ((bankTransaction.amount < 0 && systemTransaction.valor > 0) || 
+        (bankTransaction.amount > 0 && systemTransaction.valor < 0))) ||
+      // Permitir transferências internas sem validação de contrapartida
+      (bankHasTransferTerms && systemHasTransferTerms)
+    );
+    
+    if (!isValidCounterpart) return false;
+    
+    // 4. Verificação de datas mais flexível (até 3 dias de diferença)
     const bankDate = new Date(bankTransaction.posted_at);
     const systemDate = new Date(systemTransaction.data_lancamento);
     
     if (isNaN(bankDate.getTime()) || isNaN(systemDate.getTime())) {
-      console.log('🚫 Transferência rejeitada - datas inválidas:', {
-        bankDate: bankTransaction.posted_at,
-        systemDate: systemTransaction.data_lancamento
-      });
       return false;
     }
     
-    // Comparar apenas a parte da data (ignorar horário)
-    const bankDateStr = bankDate.toISOString().split('T')[0];
-    const systemDateStr = systemDate.toISOString().split('T')[0];
-    const exactSameDate = bankDateStr === systemDateStr;
+    const timeDifference = Math.abs(bankDate.getTime() - systemDate.getTime());
+    const daysDifference = timeDifference / (1000 * 60 * 60 * 24);
     
-    if (!exactSameDate) {
-      console.log('🚫 Transferência rejeitada - datas diferentes:', {
-        bankDate: bankDateStr,
-        systemDate: systemDateStr,
-        requirement: 'Data deve ser exatamente igual (mesmo dia)'
-      });
-      return false;
-    }
-    
-    // ✅ CRITÉRIO 3: Valores iguais e opostos
-    const bankAmount = bankTransaction.amount;
-    const systemAmount = systemTransaction.valor;
-    
-    // Verificar se os valores são iguais em absoluto
-    const absoluteBankAmount = Math.abs(bankAmount);
-    const absoluteSystemAmount = Math.abs(systemAmount);
-    const amountDifference = Math.abs(absoluteBankAmount - absoluteSystemAmount);
-    const amountTolerance = 0.01; // Tolerância de 1 centavo
-    
-    const valuesAreEqual = amountDifference <= amountTolerance;
-    
-    if (!valuesAreEqual) {
-      console.log('🚫 Transferência rejeitada - valores não são iguais:', {
-        bankAmount: absoluteBankAmount,
-        systemAmount: absoluteSystemAmount,
-        difference: amountDifference,
-        tolerance: amountTolerance
-      });
-      return false;
-    }
-    
-    // Verificar se os valores têm sinais opostos (um positivo, outro negativo)
-    const haveOppositeSigns = (bankAmount > 0 && systemAmount < 0) || 
-                             (bankAmount < 0 && systemAmount > 0);
-    
-    if (!haveOppositeSigns) {
-      console.log('🚫 Transferência rejeitada - valores não têm sinais opostos:', {
-        bankAmount,
-        systemAmount,
-        requirement: 'Valores devem ter sinais opostos'
-      });
-      return false;
-    }
-    
-    // ✅ TODAS AS VERIFICAÇÕES PASSARAM
-    console.log('✅ Transferência VÁLIDA identificada (todas as regras atendidas):', {
-      bankTransactionId: bankTransaction.id,
-      systemTransactionId: systemTransaction.id,
-      bankAmount,
-      systemAmount,
-      bankDate: bankDateStr,
-      systemDate: systemDateStr,
-      bankTexts: [bankTransaction.memo, bankTransaction.payee],
-      systemTexts: [systemTransaction.descricao, systemTransaction.tipo],
-      criteria: {
-        keywords: '✅ Pelo menos um lado contém termos de transferência',
-        dates: '✅ Data exatamente igual (mesmo dia)',
-        values: '✅ Valores iguais e com sinais opostos'
-      }
-    });
-    
-    return true;
+    // Permitir até 3 dias de diferença entre as datas
+    return daysDifference <= 3;
   }, []);
 
   // Upload de arquivo OFX
@@ -906,61 +808,6 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
       });
     } finally {
       setUploadLoading(false);
-    }
-  };
-
-  // Função para limpar conflitos de conciliação
-  const handleCleanConflicts = async () => {
-    if (!selectedBankAccountId || !empresaData?.id) {
-      toast({
-        title: "Erro",
-        description: "Selecione uma conta bancária primeiro",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setLoading(true);
-      
-      const response = await fetch('/api/reconciliation/clean-conflicts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          empresa_id: empresaData.id,
-          bank_account_id: selectedBankAccountId
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Erro ao limpar conflitos');
-      }
-
-      const result = await response.json();
-      
-      toast({
-        title: "Conflitos Limpos",
-        description: result.message,
-        variant: "default",
-      });
-
-      // Recarregar dados após limpeza
-      if (selectedBankAccountId) {
-        loadSuggestions();
-      }
-
-    } catch (error) {
-      console.error('❌ Erro ao limpar conflitos:', error);
-      toast({
-        title: "Erro na Limpeza",
-        description: error instanceof Error ? error.message : "Falha ao limpar conflitos",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -1785,34 +1632,63 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
   };
 
   const handleConfirmTransfer = async (pair: ReconciliationPair) => {
-    console.log('🚀 Confirmando transferência (versão robusta):', {
-      bankTransactionId: pair.bankTransaction?.id,
-      systemTransactionId: pair.systemTransaction?.id,
-      bankStatus: pair.bankTransaction?.status_conciliacao
+    console.log('🚀 handleConfirmTransfer iniciado:', {
+      pair: {
+        id: pair.id,
+        status: pair.status,
+        bankTransactionId: pair.bankTransaction?.id,
+        systemTransactionId: pair.systemTransaction?.id,
+        bankTransactionFitId: pair.bankTransaction?.fit_id,
+        bankTransactionMemo: pair.bankTransaction?.memo,
+        bankTransactionAmount: pair.bankTransaction?.amount,
+        bankTransactionStatus: pair.bankTransaction?.status_conciliacao,
+        systemTransactionDesc: pair.systemTransaction?.descricao,
+        systemTransactionValue: pair.systemTransaction?.valor
+      }
     });
 
     if (!pair.bankTransaction || !pair.systemTransaction) {
-      console.error('❌ Dados insuficientes para confirmar transferência');
-      toast({
-        title: "Erro",
-        description: "Dados insuficientes para confirmar transferência",
-        variant: "destructive",
+      console.error('❌ Dados insuficientes para confirmar transferência:', { 
+        bankTransaction: !!pair.bankTransaction, 
+        systemTransaction: !!pair.systemTransaction 
       });
       return;
     }
 
+    // ✅ VERIFICAÇÃO PRÉVIA: Limpar conflitos antes de tentar conciliar
+    console.log('🔍 Verificando conflitos pré-existentes...');
     try {
-      // ✅ ESTRATÉGIA ROBUSTA: Limpar conflitos primeiro
-      console.log('🧹 Executando limpeza preventiva de conflitos...');
+      // Tentar desconciliar qualquer conflito existente para este lançamento
+      console.log('🧹 Limpeza prévia para o lançamento:', pair.systemTransaction.id);
       
-      try {
-        await handleCleanConflicts();
-        console.log('✅ Limpeza preventiva concluída');
-      } catch (cleanError) {
-        console.warn('⚠️ Falha na limpeza preventiva, continuando...', cleanError);
+      const cleanupResponse = await fetch('/api/reconciliation/unlink-system', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_transaction_id: pair.systemTransaction.id
+        })
+      });
+      
+      if (cleanupResponse.ok) {
+        console.log('✅ Limpeza prévia concluída');
+        // Aguardar um momento
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } else {
+        console.warn('⚠️ API de limpeza prévia não disponível ou sem conflitos');
       }
+    } catch (cleanupError) {
+      console.warn('⚠️ Erro na limpeza prévia, continuando:', cleanupError);
+    }
+    
+    console.log('✅ Confirmando transferência:', {
+      bank_transaction_id: pair.bankTransaction.id,
+      system_transaction_id: pair.systemTransaction.id,
+      confidence_level: 'high',
+      rule_applied: 'transfer_confirmation',
+      statusAtual: pair.bankTransaction.status_conciliacao
+    });
 
-      // ✅ TENTATIVA 1: Conciliação direta
+    try {
       const response = await fetch('/api/reconciliation/conciliate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1824,50 +1700,96 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
         })
       });
 
+      console.log('📡 Resposta da API de confirmação de transferência recebida:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok
+      });
+
       if (!response.ok) {
-        const errorData = await response.json();
+        let errorData;
+        let errorText = '';
         
-        // Se der erro 409 (conflito), usar estratégia específica
+        try {
+          errorData = await response.json();
+          errorText = errorData.error || 'Erro desconhecido na API';
+        } catch (parseError) {
+          try {
+            errorText = await response.text();
+          } catch (textError) {
+            errorText = `Erro HTTP ${response.status}: ${response.statusText}`;
+          }
+          errorData = { error: errorText };
+        }
+        
+        // ✅ TRATAMENTO ESPECÍFICO PARA ERRO 409 (Conflito de Conciliação)
         if (response.status === 409) {
-          console.log('🔧 Conflito 409 detectado:', errorData);
+          console.warn('⚠️ Erro 409: Lançamento já conciliado com outra transação');
+          console.log('� Detalhes do conflito:', errorData);
           
-          // ✅ ESTRATÉGIA ESPECÍFICA PARA 409
-          if (errorData.error === 'DUPLICAÇÃO_BLOQUEADA') {
-            toast({
-              title: "Conflito de Duplicação",
-              description: "Este lançamento já está conciliado com outra transação. Execute 'Limpar Conflitos' primeiro.",
-              variant: "destructive",
+          // ✅ ESTRATÉGIA MELHORADA: Limpeza agressiva de conflitos
+          console.log('🔓 Executando limpeza agressiva de conflitos...');
+          
+          try {
+            // 1. Desconciliar pela transação bancária
+            console.log('🔧 Tentativa 1: Desconciliar por bank_transaction_id:', pair.bankTransaction.id);
+            const unlinkBank = await fetch('/api/reconciliation/unlink', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                bank_transaction_id: pair.bankTransaction.id
+              })
             });
-            return;
-          }
-          
-          if (errorData.error === 'TRANSACAO_BANCARIA_JA_CONCILIADA') {
-            toast({
-              title: "Transação Já Conciliada",
-              description: "Esta transação bancária já está conciliada. Desconcilie primeiro se necessário.",
-              variant: "destructive",
+            
+            if (unlinkBank.ok) {
+              console.log('✅ Desconciliação por bank_transaction_id bem-sucedida');
+            }
+            
+            // 2. Desconciliar pelo lançamento do sistema
+            console.log('� Tentativa 2: Desconciliar por system_transaction_id:', pair.systemTransaction.id);
+            const unlinkSystem = await fetch('/api/reconciliation/unlink-system', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                system_transaction_id: pair.systemTransaction.id
+              })
             });
-            return;
-          }
-          
-          // ✅ TENTATIVA 2: Desconciliar e tentar novamente
-          console.log('🔄 Tentando desconciliar e reconectar...');
-          
-          const unlinkResponse = await fetch('/api/reconciliation/unlink', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              bank_transaction_id: pair.bankTransaction.id
-            })
-          });
-          
-          if (unlinkResponse.ok) {
-            console.log('✅ Desconciliação bem-sucedida');
             
-            // Aguardar um momento para consistência
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            if (unlinkSystem.ok) {
+              console.log('✅ Desconciliação por system_transaction_id bem-sucedida');
+            }
             
-            // ✅ TENTATIVA 3: Nova conciliação após limpeza
+            // 3. Se a API retornou conflitos específicos, desconciliar cada um
+            if (errorData.existing_matches && Array.isArray(errorData.existing_matches)) {
+              console.log('🔧 Tentativa 3: Desconciliar matches específicos:', errorData.existing_matches);
+              
+              for (const match of errorData.existing_matches) {
+                if (match.bank_transaction_id) {
+                  try {
+                    const unlinkSpecific = await fetch('/api/reconciliation/unlink', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        bank_transaction_id: match.bank_transaction_id
+                      })
+                    });
+                    
+                    if (unlinkSpecific.ok) {
+                      console.log('✅ Match específico desconciliado:', match.bank_transaction_id);
+                    }
+                  } catch (unlinkError) {
+                    console.warn('⚠️ Erro ao desconciliar match específico:', unlinkError);
+                  }
+                }
+              }
+            }
+            
+            // 4. Aguardar um momento para as operações se completarem
+            console.log('⏳ Aguardando limpeza se completar...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // 5. Tentar conciliação novamente
+            console.log('🔄 Tentando conciliação após limpeza agressiva...');
             const retryResponse = await fetch('/api/reconciliation/conciliate', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1875,70 +1797,64 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
                 bank_transaction_id: pair.bankTransaction.id,
                 system_transaction_id: pair.systemTransaction.id,
                 confidence_level: 'high',
-                rule_applied: 'transfer_confirmation_after_cleanup'
+                rule_applied: 'transfer_confirmation_post_cleanup'
               })
             });
             
-            if (!retryResponse.ok) {
-              const retryError = await retryResponse.json();
-              console.error('❌ Falha após limpeza:', retryError);
+            if (retryResponse.ok) {
+              const retryResult = await retryResponse.json();
+              console.log('✅ Transferência conciliada após limpeza agressiva:', retryResult);
               
-              toast({
-                title: "Erro Persistente",
-                description: `Falha mesmo após limpeza: ${retryError.message || 'Erro desconhecido'}`,
-                variant: "destructive",
-              });
-              return;
+              // Recarregar dados para refletir as mudanças
+              setTimeout(() => {
+                console.log('🔄 Recarregando dados após conciliação bem-sucedida...');
+                loadSuggestions();
+              }, 1000);
+              
+              return retryResult;
+            } else {
+              const retryError = await retryResponse.text();
+              console.error('❌ Erro persistente após limpeza agressiva:', retryError);
+              
+              // Mostrar erro mais informativo
+              const conflictInfo = errorData.existing_matches?.length > 0 
+                ? `Conflitos: ${errorData.existing_matches.map(m => m.bank_transaction_id || 'ID não identificado').join(', ')}`
+                : 'Conflitos não identificados';
+                
+              throw new Error(`Conflito persistente. ${conflictInfo}. Verifique a tabela transaction_matches.`);
             }
             
-            const retryResult = await retryResponse.json();
-            console.log('✅ Transferência confirmada após limpeza:', retryResult);
-            
-          } else {
-            console.error('❌ Falha na desconciliação');
-            toast({
-              title: "Erro na Desconciliação",
-              description: "Não foi possível limpar a transação para nova conciliação",
-              variant: "destructive",
-            });
-            return;
+          } catch (aggressiveCleanupError) {
+            console.error('❌ Erro na limpeza agressiva:', aggressiveCleanupError);
+            throw new Error(`Falha na resolução automática: ${aggressiveCleanupError instanceof Error ? aggressiveCleanupError.message : String(aggressiveCleanupError)}`);
           }
-          
-        } else {
-          // Outros tipos de erro
-          console.error('❌ Erro não-409:', errorData);
-          toast({
-            title: "Erro na Conciliação",
-            description: errorData.message || `Erro ${response.status}: ${errorData.error || 'Desconhecido'}`,
-            variant: "destructive",
-          });
-          return;
         }
+        
+        console.error('❌ Erro na API de confirmação de transferência:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData,
+          errorText
+        });
+        
+        throw new Error(errorText || 'Erro ao confirmar transferência');
       }
 
       const result = await response.json();
-      console.log('✅ Transferência confirmada com sucesso:', result);
-      
-      toast({
-        title: "Transferência Confirmada",
-        description: "A transferência foi conciliada com sucesso.",
-        variant: "default",
+      console.log('✅ Transferência confirmada com sucesso:', {
+        result,
+        timestamp: new Date().toISOString()
       });
-      
-      // Recarregar dados após sucesso
-      setTimeout(() => loadSuggestions(), 500);
       
       return result;
       
     } catch (error) {
-      console.error('❌ Erro ao confirmar transferência:', error);
-      
-      toast({
-        title: "Erro na Conciliação",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
+      console.error('💥 ERRO capturado em handleConfirmTransfer:', {
+        error,
+        errorMessage: error instanceof Error ? error.message : 'Erro desconhecido',
+        errorName: error instanceof Error ? error.name : 'N/A',
+        timestamp: new Date().toISOString()
       });
-      
       throw error;
     }
   };
@@ -2641,18 +2557,6 @@ ORDER BY tm.created_at DESC;
                 >
                   <RefreshCw className="h-4 w-4" />
                 </Button>
-                {/* Botão para limpar conflitos */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCleanConflicts}
-                  disabled={loading || !selectedBankAccountId}
-                  className="px-3 text-orange-600 border-orange-200 hover:bg-orange-50"
-                  title="Limpar conflitos de conciliação (matches órfãos)"
-                >
-                  <AlertTriangle className="h-4 w-4 mr-1" />
-                  Limpar Conflitos
-                </Button>
               </div>
               <div className="text-right">
                 <div className="text-sm font-medium text-gray-900">
@@ -2832,21 +2736,12 @@ function BuscarLancamentosModal({
         isTransferTransaction
       });
       
-      // ✅ CORREÇÃO: Buscar lançamentos DISPONÍVEIS (não conciliados) com valor exato (±0.01)
+      // Buscar lançamentos com valor exato (±0.01 para precision) e status pago
       const response = await fetch(`/api/lancamentos?empresa_id=${empresaData.id}&status=pago&valor_min=${valorTransacao - 0.01}&valor_max=${valorTransacao + 0.01}&limit=100`);
       
       if (response.ok) {
         const data = await response.json();
-        console.log('📊 Lançamentos DISPONÍVEIS encontrados:', data.length);
-        
-        // ✅ LOG: Verificar se API já filtrou conciliados
-        if (data.length === 0) {
-          console.log('⚠️ Nenhum lançamento disponível - possíveis motivos:', {
-            'Todos já conciliados': 'Lançamentos podem estar em uso',
-            'Valor incompatível': `Buscando valor ${valorTransacao} ±0.01`,
-            'Status incorreto': 'Apenas lançamentos com status "pago" são buscados'
-          });
-        }
+        console.log('📊 Lançamentos encontrados:', data.length);
         
         // Filtrar e ordenar por relevância
         const lancamentosFiltrados = data
@@ -3172,54 +3067,40 @@ function ReconciliationCard({
            );
   };
 
-  // ✅ FUNÇÃO REVISADA: Verificação baseada EXCLUSIVAMENTE no banco de dados
+  // ✅ CORREÇÃO: Função simplificada para verificar se está conciliado
   const isTransactionReconciled = (pair: ReconciliationPair): boolean => {
     // ✅ ÚNICA FONTE DA VERDADE: Campo status_conciliacao da tabela bank_transactions
-    const isReconciled = pair.bankTransaction?.status_conciliacao === 'conciliado';
-    
-    // Debug para detectar inconsistências
-    if (isReconciled && (pair.status === 'suggested' || pair.status === 'sugerido')) {
-      console.warn('⚠️ INCONSISTÊNCIA DETECTADA - Transação conciliada no banco mas status incorreto:', {
-        bankTransactionId: pair.bankTransaction?.id,
-        bankStatus: pair.bankTransaction?.status_conciliacao,
-        pairStatus: pair.status,
-        shouldBeGreen: true
-      });
-    }
-    
-    return isReconciled;
+    return pair.bankTransaction?.status_conciliacao === 'conciliado';
   };
 
-  // ✅ FUNÇÃO REVISADA: Cores dos cards conforme especificação
+  // ✅ CORREÇÃO: Função simplificada para cores do card
   const getCardBackgroundColor = (status: string, pair: ReconciliationPair) => {
-    // ✅ REGRA 1: VERDE apenas para conciliados (baseado no banco)
-    if (pair.bankTransaction?.status_conciliacao === 'conciliado') {
-      return 'bg-green-100 border-green-400 shadow-lg'; // VERDE = CONCILIADO
-    }
+    const bankStatus = pair.bankTransaction?.status_conciliacao;
     
-    // ✅ REGRA 2: AZUL apenas para transferências (match identificado como transferência)
-    const isTransfer = isValidTransfer(pair.bankTransaction, pair.systemTransaction);
-    if (isTransfer && pair.bankTransaction?.status_conciliacao === 'pendente') {
-      return 'bg-blue-100 border-blue-400 shadow-md'; // AZUL = TRANSFERÊNCIA
+    // ✅ PRIORIDADE 1: Status oficial do banco de dados
+    switch (bankStatus) {
+      case 'conciliado':
+        return 'bg-green-200 border-green-400 shadow-md'; // Verde para conciliadas
+      case 'ignorado':
+        return 'bg-gray-100 border-gray-300 shadow-sm'; // Cinza para ignoradas
+      case 'pendente':
+        // Para pendentes, usar lógica de status do frontend
+        switch (pair.status) {
+          case 'suggested':
+          case 'sugerido': 
+            return 'bg-orange-50 border-orange-300 hover:bg-orange-100';
+          case 'transfer':
+          case 'transferencia':
+            return 'bg-blue-100 border-blue-300 hover:bg-blue-150';
+          case 'no_match':
+          case 'sem_match':
+            return 'bg-gray-100 border-gray-300 hover:bg-gray-150';
+          default:
+            return 'bg-white border-gray-300 hover:bg-gray-50';
+        }
+      default:
+        return 'bg-white border-gray-300 hover:bg-gray-50';
     }
-    
-    // ✅ REGRA 3: Para pendentes com match (sugestão)
-    if (pair.bankTransaction?.status_conciliacao === 'pendente' && pair.systemTransaction) {
-      return 'bg-yellow-50 border-yellow-300 hover:bg-yellow-100'; // AMARELO = SUGESTÃO
-    }
-    
-    // ✅ REGRA 4: Para pendentes sem match
-    if (pair.bankTransaction?.status_conciliacao === 'pendente' && !pair.systemTransaction) {
-      return 'bg-gray-50 border-gray-300 hover:bg-gray-100'; // CINZA = SEM MATCH
-    }
-    
-    // ✅ REGRA 5: Para ignorados
-    if (pair.bankTransaction?.status_conciliacao === 'ignorado') {
-      return 'bg-gray-200 border-gray-400 shadow-sm opacity-60'; // CINZA ESCURO = IGNORADO
-    }
-    
-    // Padrão (não deveria chegar aqui)
-    return 'bg-white border-gray-300 hover:bg-gray-50';
   };
 
   return (
@@ -3351,9 +3232,7 @@ function ReconciliationCard({
           </>
         )}
         
-        {!isTransactionReconciled(pair) && 
-         (pair.status === 'transferencia' || 
-          (pair.status === 'sugerido' && isValidTransfer(pair.bankTransaction, pair.systemTransaction))) && (
+        {pair.bankTransaction?.status_conciliacao !== 'conciliado' && (pair.status === 'transfer' || pair.status === 'transferencia') && (
           <>
             <div className="text-center">
               <ArrowLeftRight className="h-5 w-5 text-blue-500 mx-auto mb-1" />
@@ -3377,14 +3256,16 @@ function ReconciliationCard({
           </>
         )}
 
-        {/* ✅ Transferências identificadas mas com status 'sugerido' */}
+        {/* ✅ Transferências pendentes de confirmação (matched mas não conciliadas ainda) */}
         {!isTransactionReconciled(pair) && 
-         pair.status === 'sugerido' &&
-         isValidTransfer(pair.bankTransaction, pair.systemTransaction) && (
+         (pair.status === 'matched') &&
+         (pair.bankTransaction?.memo?.toUpperCase().includes('TRANSFER') || 
+          pair.systemTransaction?.tipo === 'transferencia' ||
+          pair.systemTransaction?.descricao?.toUpperCase().includes('TRANSFER')) && (
           <>
             <div className="text-center">
               <ArrowLeftRight className="h-5 w-5 text-blue-500 mx-auto mb-1" />
-              <span className="text-xs text-blue-500 font-medium">transferencia</span>
+              <span className="text-xs text-blue-500 font-medium">transferencia (matched)</span>
             </div>
             <Button 
               size="sm" 

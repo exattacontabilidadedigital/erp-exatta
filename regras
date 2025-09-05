@@ -1,0 +1,363 @@
+Regra de Sugestão
+
+Um match sugerido ocorre quando um lançamento do OFX e um lançamento do sistema possuem data e valor compatíveis, com o mesmo sinal (entrada ou saída), mas não atendem aos requisitos de transferência.
+
+Critérios:
+
+Data compatível
+
+A data do lançamento no OFX e no sistema deve ser idêntica ou estar dentro de uma tolerância configurável.
+
+Exemplo de tolerância: até 3 dias de diferença.
+
+Valor compatível
+
+O valor do lançamento no OFX e no sistema deve ser igual ou estar dentro de uma tolerância configurável de diferença.
+
+Exemplo de tolerância: até R$ 2,00.
+
+Mesmo sinal (entrada/saída)
+
+Ambos devem ser receitas ou ambos devem ser despesas.
+
+Exemplo:
+
+OFX: +R$ 500,00
+
+Sistema: +R$ 500,00 ✅ Sugestão válida
+
+OFX: -R$ 500,00
+
+Sistema: -R$ 500,00 ✅ Sugestão válida
+
+OFX: -R$ 500,00
+
+Sistema: +R$ 500,00 ❌ Não é sugestão (seria analisado como transferência)
+
+Descrição descartada
+
+A descrição não será usada como critério de comparação.
+
+Regras adicionais:
+
+Se os critérios de data, valor e sinal forem atendidos, o sistema classifica como Sugestão (status roxo).
+
+Sugestões não são conciliadas automaticamente → o usuário deve clicar em Conciliar para confirmar.
+
+Caso o usuário entenda que o match não é válido, pode usar:
+
+Desvincular → volta para Sem Match (branco).
+
+Ignorar → oculta o lançamento do OFX e o card correspondente do sistema.
+
+👉 Resumindo:
+Sugestão = Data próxima + Valor próximo + Mesmo sinal (entrada/saída).
+
+
+
+
+Regra de Transferência
+
+Uma transferência ocorre quando o sistema identifica que um lançamento do OFX e um lançamento do sistema interno representam o mesmo movimento de transferência entre contas. Para classificar um par de lançamentos como transferência, os seguintes critérios devem ser atendidos simultaneamente:
+
+Critérios obrigatórios:
+
+Descrição contendo termos de transferência
+
+O lançamento do OFX ou do sistema deve conter na descrição palavras-chave como:
+
+"TRANSF", "TRANSFERÊNCIA", "TED", "DOC", "PIX TRANSF", ou termos semelhantes.
+
+A lista de termos pode ser configurada em uma tabela de matching_rules, permitindo que o sistema aprenda e seja ajustado com o tempo.
+
+Data exatamente igual
+
+A data do lançamento no OFX e no sistema deve ser idêntica (mesmo dia).
+
+Transferências são movimentos simultâneos: saída em uma conta e entrada em outra no mesmo dia.
+
+Valores iguais e opostos
+
+O valor do lançamento do OFX e o do sistema devem ser iguais em absoluto, mas com sinais opostos:
+
+Exemplo:
+
+Lançamento OFX: -R$ 1.000,00
+
+Lançamento Sistema: +R$ 1.000,00
+
+Regras adicionais:
+
+Se qualquer um dos 3 critérios não for atendido, o par não é classificado como transferência.
+
+O sistema apenas sugere a classificação como transferência (status "transferência"), mas a conciliação final só ocorre quando o usuário clicar no botão Conciliar.
+
+Após a conciliação, ambos os lançamentos recebem status Conciliado (cor verde).
+
+Caso o usuário entenda que a sugestão não está correta, ele pode usar o botão Desvincular, retornando o par para o status Sem Match (cor branca).
+
+👉 Resumindo:
+Transferência = descrição com termo + mesma data + valores iguais e opostos.
+
+
+
+Regra de Sem Match
+
+Um lançamento é classificado como Sem Match quando não atende aos critérios de Transferência nem de Sugestão.
+Ou seja, o sistema não encontrou nenhum par adequado para o lançamento importado do OFX.
+
+Critérios de Sem Match
+
+Data não compatível
+
+Diferença superior à tolerância configurável (ex.: mais de 3 dias de diferença).
+
+Valor não compatível
+
+Diferença superior à tolerância configurável (ex.: mais de R$ 2,00).
+
+Sinal divergente (quando não for transferência)
+
+Exemplo:
+
+OFX: -R$ 1.000,00
+
+Sistema: +R$ 1.000,00
+
+Não atende aos requisitos de Transferência nem de Sugestão → fica Sem Match.
+
+Ausência de par no sistema
+
+O lançamento do OFX não encontrou nenhum correspondente no sistema (nem sugestão, nem transferência).
+
+Regras adicionais
+
+Exibição no frontend
+
+Cards brancos (status: Sem Match).
+
+Mostrados lado esquerdo (OFX) com um card vazio ou com opções de ação no lado direito.
+
+Ações disponíveis ao usuário
+
+Criar novo lançamento → gera automaticamente um lançamento no sistema vinculado ao OFX.
+
+Registrar como transferência → permite o usuário marcar manualmente como transferência, escolhendo a conta de destino.
+
+Buscar em outros períodos → permite procurar lançamentos no sistema fora do período atual de conciliação.
+
+Ignorar → oculta o lançamento (OFX + card do sistema correspondente) da tela de conciliação.
+
+Persistência no banco
+
+Continua registrado em bank_transactions (OFX) e disponível em reconciliation_sessions, mas com status Sem Match.
+
+Se ignorado, o sistema marca como oculto sem excluir o registro.
+
+👉 Resumindo:
+Sem Match = não atende critérios de Transferência nem Sugestão.
+
+Regra de Cores para Entradas e Saídas
+
+Independente do status do card (Conciliado, Sugestão, Transferência ou Sem Match), o valor exibido deve ter uma cor específica para indicar se a transação é uma entrada ou uma saída.
+
+Critérios:
+
+Entrada (Receita)
+
+Quando o valor do lançamento for positivo (ex.: crédito na conta).
+
+Cor do valor: Verde.
+
+Classe Tailwind: text-green-600 ou text-green-700.
+
+Exemplo: +R$ 1.250,00.
+
+Saída (Despesa)
+
+Quando o valor do lançamento for negativo (ex.: débito na conta).
+
+Cor do valor: Vermelho.
+
+Classe Tailwind: text-red-600 ou text-red-700.
+
+Exemplo: -R$ 800,00.
+
+Regras adicionais:
+
+O card mantém sua cor de status (Conciliado = verde, Sugestão = roxo, Transferência = azul, Sem Match = branco).
+
+O valor dentro do card deve sempre respeitar a regra de entrada/saída:
+
+Verde → entrada.
+
+Vermelho → saída.
+
+Essa regra vale tanto para o lado esquerdo (OFX) quanto para o lado direito (sistema).
+
+Em caso de transferência, os dois cards devem mostrar valores em cores opostas:
+
+Exemplo:
+
+OFX: -R$ 1.000,00 (vermelho)
+
+Sistema: +R$ 1.000,00 (verde)
+
+👉 Resumindo:
+
+Entrada → Verde
+
+Saída → Vermelho
+
+Sempre aplicado ao valor, independente do status do card.
+
+# 🎨 Regras de Cores dos Cards
+
+Cada card no front-end da conciliação bancária segue **duas lógicas distintas de cor**:
+
+---
+
+## 1. Cor do Fundo do Card → Status do Match
+
+- **Conciliado** → Fundo **Verde claro** (`bg-green-100`)  
+- **Sugestão** → Fundo **Roxo claro** (`bg-purple-100`)  
+- **Transferência** → Fundo **Azul claro** (`bg-blue-100`)  
+- **Sem Match** → Fundo **Branco** (`bg-white`)  
+
+---
+
+## 2. Cor do Valor dentro do Card → Tipo do Lançamento
+
+- **Entrada (Receita)** → Texto **Verde escuro** (`text-green-700`)  
+- **Saída (Despesa)** → Texto **Vermelho escuro** (`text-red-700`)  
+
+---
+
+## 3. Combinação Visual
+
+O fundo do card **nunca muda** baseado no valor, somente pelo **status**.  
+O valor dentro do card segue **verde ou vermelho** conforme **entrada ou saída**.
+
+| Status do Card      | Cor do Fundo   | Entrada (Receita) | Saída (Despesa) |
+|---------------------|----------------|-------------------|-----------------|
+| Conciliado          | Verde claro    | Texto verde       | Texto vermelho  |
+| Sugestão            | Roxo claro     | Texto verde       | Texto vermelho  |
+| Transferência       | Azul claro     | Texto verde       | Texto vermelho  |
+| Sem Match           | Branco         | Texto verde       | Texto vermelho  |
+
+---
+
+## 4. Caso Especial: Transferência
+
+- Sempre ocorre em **par** (um lançamento de saída e outro de entrada).  
+- Exemplo visual:  
+  - Lado esquerdo (OFX): `-R$ 1.000,00` → texto vermelho  
+  - Lado direito (Sistema): `+R$ 1.000,00` → texto verde  
+- Ambos os cards terão fundo **Azul claro** (`bg-blue-100`).
+
+# 🔘 Regras dos Botões na Conciliação
+
+Os botões disponíveis em cada card dependem do **status do match**.  
+A lógica é sempre respeitar o fluxo: **Match → Conciliar → Desconciliar/Desvincular/Igorar**.
+
+---
+
+## 1. Card Conciliado (Verde)
+- **Botão disponível:**  
+  - `Desconciliar` → desfaz a conciliação, volta para **Sugestão/Transferência** (dependendo da origem do match).
+
+- **tag/botão disponíveis no card do ofx no canto direito inferior:**  
+- Ignorar.
+
+---
+
+## 2. Card Sugestão (Roxo)
+- **Botões disponíveis:**  
+  - `Conciliar` → confirma a sugestão e muda status para **Conciliado (Verde)**.  
+  - `Desvincular` → desfaz o match, volta para **Sem Match (Branco)**.  
+
+  - **tag/botão disponíveis no card do ofx no canto direito inferior:**
+  - `Ignorar` → oculta o lançamento do OFX e o card correspondente do sistema.  
+
+---
+
+## 3. Card Transferência (Azul)
+- **Botões disponíveis:**  
+  - `Conciliar` → confirma a transferência e muda status para **Conciliado (Verde)**.  
+  - `Desvincular` → desfaz o match, volta para **Sem Match (Branco)**.  
+
+- **tag/botão disponíveis no card do ofx no canto direito inferior:**
+  - `Ignorar` → oculta o lançamento do OFX e o card correspondente do sistema.  
+
+---
+
+## 4. Card Sem Match (Branco)
+- **Botões disponíveis dentro do card do lado direito:**  
+  - `Criar Lançamento` → gera um novo lançamento no sistema a partir do OFX.  
+  - `Nova Transferência` → permite criar manualmente um par de transferência.  
+  - `Buscar Lançamento` → pesquisa lançamentos em períodos diferentes para tentar conciliar.  
+  
+- **Botões disponíveis entre os card do status sem match:**  
+  - `Ignorar` → oculta o lançamento do OFX e o card correspondente do sistema.  
+
+---
+
+# 🔄 Regras Gerais de Comportamento dos Botões
+1. **Conciliar**  
+   - Disponível apenas para **Sugestão (Roxo)** ou **Transferência (Azul)**.  
+   - Ao confirmar, muda status para **Conciliado (Verde)**.  
+
+2. **Desconciliar**  
+   - Disponível apenas para **Conciliado (Verde)**.  
+   - Volta o par para o status anterior (Sugestão ou Transferência).  
+
+3. **Desvincular**  
+   - Disponível para **Sugestão (Roxo)** e **Transferência (Azul)**.  
+   - Desfaz o match e volta para **Sem Match (Branco)**.  
+
+4. **Ignorar**  
+   - Disponível para todos os status exceto **Conciliado (Verde)**.  
+   - Oculta o lançamento do OFX e o card do sistema.  
+
+5. **Criar Lançamento / Nova Transferência / Buscar Lançamento**  
+   - Disponíveis apenas para **Sem Match (Branco)**.  
+
+
+# 🚫 Regra de Não Duplicidade de Lançamentos
+
+## 1. Restrições de Uso
+- Um **lançamento do sistema** só pode ser usado em **um único match** (seja Sugestão, Transferência ou Conciliado).  
+- Após ser utilizado, ele não pode ser reutilizado em outro par de conciliação.  
+
+---
+
+## 2. Efeito na Interface
+- Na **lista de lançamentos** exibida no **modal "Buscar Lançamento"**:
+  - Lançamentos **já conciliados ou vinculados** ainda aparecem na lista (para fins de transparência).  
+  - Porém, o botão **Selecionar** deve estar **desabilitado** (`disabled`).  
+  - O status visual deve indicar algo como:  
+    - "Já utilizado" ou "Indisponível para conciliação".  
+
+- Apenas lançamentos **não utilizados** aparecem com o botão **Selecionar habilitado**.  
+
+---
+
+## 3. Fluxo de Utilização
+- Se o usuário tentar vincular um lançamento **já utilizado**, o sistema deve:
+  - **Bloquear a ação**.  
+  - Exibir mensagem clara: *"Este lançamento já foi utilizado em outra conciliação"*.  
+
+---
+
+## 4. Fluxo de Desvinculação
+- Caso o usuário **Desvincule** ou **Desconcilie** um lançamento:
+  - Ele volta a ficar **disponível** para seleção em novos matches.  
+  - O botão **Selecionar** no modal retorna a ficar **habilitado**.  
+
+---
+
+## 5. Benefícios
+- Evita conciliações duplicadas.  
+- Garante consistência entre OFX e lançamentos do sistema.  
+- Dá **transparência** ao usuário, mostrando todos os lançamentos (usados ou não), mas controlando a disponibilidade via **botão de ação**.
+

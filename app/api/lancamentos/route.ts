@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Construir query base
+    // ✅ CORREÇÃO: Construir query base EXCLUINDO lançamentos já conciliados
     let query = supabase
       .from('lancamentos')
       .select(`
@@ -50,6 +50,30 @@ export async function GET(request: NextRequest) {
         )
       `)
       .eq('empresa_id', empresaId);
+
+    // ✅ FILTRO CRÍTICO: Excluir lançamentos já conciliados
+    // Buscar IDs de lançamentos que já estão em matches confirmados
+    const { data: matchesConfirmados, error: matchError } = await supabase
+      .from('transaction_matches')
+      .select('system_transaction_id')
+      .eq('status', 'confirmed');
+
+    if (matchError) {
+      console.error('❌ Erro ao buscar matches confirmados:', matchError);
+      return NextResponse.json(
+        { error: 'Erro ao verificar lançamentos conciliados', details: matchError.message },
+        { status: 500 }
+      );
+    }
+
+    const idsJaConciliados = matchesConfirmados?.map(m => m.system_transaction_id) || [];
+    
+    console.log('🚫 Lançamentos já conciliados a serem excluídos:', idsJaConciliados.length);
+    
+    // Se há lançamentos conciliados, excluí-los da busca
+    if (idsJaConciliados.length > 0) {
+      query = query.not('id', 'in', `(${idsJaConciliados.map(id => `"${id}"`).join(',')})`);
+    }
 
     // Aplicar filtros
     if (status) {
