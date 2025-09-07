@@ -36,6 +36,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LancamentosForm } from "@/components/lancamentos/lancamentos-form";
 import { MatchingEngine } from "@/lib/matching-engine";
+import BuscarLancamentosModalComponent from './buscar-lancamentos-modal';
 
 // Tipos baseados no blueprint com controle de duplicidade
 interface BankTransaction {
@@ -50,7 +51,7 @@ interface BankTransaction {
   reference_number?: string;
   bank_reference?: string;
   status_conciliacao: 'pendente' | 'conciliado' | 'desconciliado' | 'desvinculado' | 'ignorado'; // Ações do usuário
-  reconciliation_status?: 'sugerido' | 'transferencia' | 'sem_match'; // Classificação automática do matching
+  reconciliation_status: 'sugerido' | 'transferencia' | 'sem_match' | 'conciliado' | 'pending'; // ✅ CORREÇÃO: usar reconciliation_status (nome real da coluna)
   bank_statement_id: string;
   bank_account_id: string;
 }
@@ -468,26 +469,30 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
           const status = pair.bankTransaction?.status_conciliacao || 'undefined';
           acc[status] = (acc[status] || 0) + 1;
           return acc;
+        }, {}),
+        // ✅ NOVO: Distribuição do reconciliation_status
+        reconciliationStatusDistribution: data.pairs?.reduce((acc: any, pair: any) => {
+          const status = pair.bankTransaction?.reconciliation_status || 'undefined';
+          acc[status] = (acc[status] || 0) + 1;
+          return acc;
         }, {})
       });
       
-      // ✅ CORREÇÃO CRÍTICA: SEMPRE usar dados diretamente da API (estado real do banco)
-      // Não fazer processamento adicional que pode mascarar o estado real
+      // ✅ CORREÇÃO CRÍTICA: Usar dados DIRETAMENTE da API (estado real do banco)
       console.log('✅ Usando dados diretamente da API (estado real do banco de dados)');
       
-      // Garantir que o status dos pairs reflita exatamente o status_conciliacao do banco
-      // ✅ CORREÇÃO COMPLETA: Mapear status baseado EXCLUSIVAMENTE no banco
+      // ✅ CORREÇÃO COMPLETA: Mapear status baseado EXCLUSIVAMENTE no reconciliation_status
       const correctedPairs = (data.pairs || []).map((pair: any) => {
         const bankStatus = pair.bankTransaction?.status_conciliacao;
-        const reconciliationStatus = pair.bankTransaction?.reconciliation_status;
+        const reconciliationStatus = pair.bankTransaction?.reconciliation_status; // ✅ CORREÇÃO: usar reconciliation_status
         const hasSystemMatch = !!pair.systemTransaction;
         
         let frontendStatus = 'sem_match'; // padrão
         
-        console.log('📊 Corrigindo status do pair com reconciliation_status:', {
+        console.log('📊 Mapeando status do pair com reconciliation_status:', {
           bankTransactionId: pair.bankTransaction?.id,
           bankStatus,
-          reconciliationStatus,
+          reconciliationStatus, // ✅ NOVO: log do reconciliation_status
           hasSystemMatch,
           originalStatus: pair.status
         });
@@ -501,7 +506,7 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
           switch (reconciliationStatus) {
             case 'transferencia':
               frontendStatus = 'transferencia'; // Azul - transferência identificada automaticamente
-              console.log('🔵 Transferência identificada:', {
+              console.log('🔵 Transferência identificada via reconciliation_status:', {
                 bankId: pair.bankTransaction?.id,
                 fit_id: pair.bankTransaction?.fit_id,
                 payee: pair.bankTransaction?.payee,
@@ -526,7 +531,7 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
           frontendStatus = 'sem_match';
         }
         
-        console.log('✅ Status corrigido com reconciliation_status:', {
+        console.log('✅ Status mapeado com reconciliation_status:', {
           bankTransactionId: pair.bankTransaction?.id,
           bankStatus,
           reconciliationStatus,
@@ -567,24 +572,24 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
       
       setPairs(filteredPairs);
       
-      // ✅ CORREÇÃO: Recalcular summary baseado na ÚNICA fonte da verdade + reconciliation_status
+      // ✅ CORREÇÃO: Recalcular summary baseado no reconciliation_status
       const totalPairs = filteredPairs.length;
       const conciliados = filteredPairs.filter((p: any) => p.bankTransaction?.status_conciliacao === 'conciliado').length;
       const sugeridos = filteredPairs.filter((p: any) => 
         p.bankTransaction?.status_conciliacao === 'pendente' && 
-        p.bankTransaction?.status_conciliacao !== 'ignorado' && 
-        p.systemTransaction
+        p.bankTransaction?.reconciliation_status === 'sugerido' // ✅ CORREÇÃO: usar reconciliation_status
       ).length;
-      const transferencias = filteredPairs.filter((p: any) => p.status === 'transfer').length;
+      const transferencias = filteredPairs.filter((p: any) => 
+        p.bankTransaction?.reconciliation_status === 'transferencia' // ✅ CORREÇÃO: usar reconciliation_status
+      ).length;
       const sem_match = filteredPairs.filter((p: any) => 
-        (!p.systemTransaction && p.bankTransaction?.status_conciliacao !== 'ignorado') || 
+        p.bankTransaction?.reconciliation_status === 'sem_match' || // ✅ CORREÇÃO: usar reconciliation_status
         p.bankTransaction?.status_conciliacao === 'ignorado'
       ).length;
-      const conflitos = filteredPairs.filter((p: any) => p.status === 'conflito').length;
+      const conflitos = 0; // Será calculado pela API se necessário
       const pendentes = filteredPairs.filter((p: any) => 
         p.bankTransaction?.status_conciliacao === 'pendente' && 
-        p.bankTransaction?.status_conciliacao !== 'ignorado' && 
-        !p.systemTransaction
+        p.bankTransaction?.reconciliation_status === 'sem_match' // ✅ CORREÇÃO: usar reconciliation_status
       ).length;
       
       const realSummary: ReconciliationSummary = {
@@ -1114,6 +1119,190 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
     setSelectedBankTransaction(null);
   };
 
+  // ✅ FUNÇÃO COORDENADA: Criar sugestão de conciliação
+  const handleCreateSuggestion = async (
+    bankTransaction: BankTransaction, 
+    suggestionData: {
+      selectedLancamentos: any[];
+      primaryLancamentoId?: string | null;
+      isValidMatch: boolean;
+      totalValue: number;
+      hasDiscrepancy: boolean;
+      useExistingHandling?: boolean;
+      matchType?: 'exact_match' | 'manual' | 'multiple_transactions';
+      confidenceLevel?: 'high' | 'medium' | 'low';
+      validation?: any;
+      summary?: any;
+    }
+  ) => {
+    try {
+      console.log('🎯 Criando sugestão de conciliação - COORDENADO:', {
+        bankTransaction: bankTransaction ? {
+          id: bankTransaction.id,
+          amount: bankTransaction.amount,
+          transaction_type: bankTransaction.transaction_type,
+          posted_at: bankTransaction.posted_at
+        } : 'null/undefined',
+        suggestionData: {
+          selectedLancamentosCount: suggestionData?.selectedLancamentos?.length || 0,
+          selectedLancamentosIds: suggestionData?.selectedLancamentos?.map(l => l.id) || [],
+          isValidMatch: suggestionData?.isValidMatch,
+          hasDiscrepancy: suggestionData?.hasDiscrepancy,
+          totalValue: suggestionData?.totalValue,
+          matchType: suggestionData?.matchType || 'manual',
+          confidenceLevel: suggestionData?.confidenceLevel || 'medium',
+          useExistingHandling: suggestionData?.useExistingHandling
+        }
+      });
+
+      // Validação inicial
+      if (!bankTransaction) {
+        console.error('❌ bankTransaction é null/undefined:', { bankTransaction });
+        throw new Error('Transação bancária não fornecida');
+      }
+      
+      if (!bankTransaction.id) {
+        console.error('❌ bankTransaction.id é null/undefined:', { 
+          bankTransaction,
+          hasId: !!bankTransaction.id,
+          idValue: bankTransaction.id 
+        });
+        throw new Error('Transação bancária sem ID válido');
+      }
+
+      if (!suggestionData || !suggestionData.selectedLancamentos || suggestionData.selectedLancamentos.length === 0) {
+        throw new Error('Dados de sugestão inválidos ou sem lançamentos selecionados');
+      }
+
+      const lancamentosSelecionados = suggestionData.selectedLancamentos;
+      
+      // ✅ DETERMINAR STATUS baseado na validação de transferência
+      let statusFinal: 'sugerido' | 'transferencia' = 'sugerido';
+      let statusConciliacao: 'pendente' | 'conciliado' = 'pendente';
+      
+      // Se é um match válido de 1 lançamento, verificar se é transferência
+      if (lancamentosSelecionados.length === 1 && suggestionData.isValidMatch) {
+        const isTransfer = isValidTransfer(bankTransaction, lancamentosSelecionados[0]);
+        
+        if (isTransfer) {
+          statusFinal = 'transferencia';
+          console.log('🔵 Transferência detectada automaticamente:', {
+            bankId: bankTransaction.id,
+            systemId: lancamentosSelecionados[0].id,
+            bankMemo: bankTransaction.memo,
+            systemDesc: lancamentosSelecionados[0].descricao
+          });
+        }
+      }
+
+      console.log('📊 Status determinado:', {
+        statusFinal,
+        statusConciliacao,
+        isTransfer: statusFinal === 'transferencia',
+        selectedCount: lancamentosSelecionados.length
+      });
+
+      // ✅ CHAMAR API para gravar na tabela transaction_matches e atualizar bank_transactions
+      const response = await fetch('/api/reconciliation/create-suggestion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bank_transaction_id: bankTransaction.id,
+          system_transaction_ids: lancamentosSelecionados.map(l => l.id),
+          primary_transaction_id: suggestionData.primaryLancamentoId || lancamentosSelecionados[0]?.id,
+          reconciliation_status: statusFinal, // ✅ CORREÇÃO: usar reconciliation_status (nome correto da coluna)
+          match_type: suggestionData.matchType || (suggestionData.isValidMatch ? 'exact_match' : 'manual'),
+          confidence_level: suggestionData.confidenceLevel || (suggestionData.isValidMatch ? 'high' : 'medium'),
+          has_discrepancy: suggestionData.hasDiscrepancy,
+          total_value: suggestionData.totalValue,
+          validation_data: suggestionData.validation
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao criar sugestão');
+      }
+
+      const result = await response.json();
+      console.log('✅ Sugestão criada com sucesso na API:', result);
+
+      // ✅ ATUALIZAR ESTADO LOCAL imediatamente (UX responsivo)
+      setPairs(currentPairs => {
+        const updatedPairs = currentPairs.map(pair => {
+          if (pair.bankTransaction?.id === bankTransaction.id) {
+            if (!pair.bankTransaction) {
+              console.error('❌ bankTransaction não encontrado no pair');
+              return pair;
+            }
+
+            console.log('🔄 Atualizando pair local:', {
+              pairId: pair.id,
+              bankTransactionId: pair.bankTransaction.id,
+              statusFinal,
+              currentStatus: pair.status
+            });
+
+            return {
+              ...pair,
+              status: statusFinal as 'conciliado' | 'sugerido' | 'transferencia' | 'sem_match' | 'conflito' | 'pendente' | 'matched' | 'suggested' | 'transfer' | 'no_match',
+              systemTransaction: lancamentosSelecionados[0], // Lançamento primário
+              systemTransactions: lancamentosSelecionados, // Todos os lançamentos
+              matchScore: statusFinal === 'transferencia' ? 100 : 75,
+              matchReason: statusFinal === 'transferencia' ? 'Transferência automática' : 'Sugestão manual',
+              confidenceLevel: (suggestionData.confidenceLevel || (statusFinal === 'transferencia' ? '100%' : 'manual')) as '100%' | 'provavel' | 'manual' | 'baixo',
+              bankTransaction: {
+                ...pair.bankTransaction,
+                transation_status: statusFinal, // ✅ CORREÇÃO: usar transation_status
+                status_conciliacao: statusConciliacao
+              }
+            };
+          }
+          return pair;
+        });
+        
+        console.log('✅ Estado pairs atualizado com sucesso');
+        return updatedPairs;
+      });
+
+      // ✅ ATUALIZAR SUMMARY baseado no novo status
+      setSummary(currentSummary => {
+        if (!currentSummary) return currentSummary;
+        
+        const newSummary = {
+          ...currentSummary,
+          sugeridos: statusFinal === 'sugerido' ? currentSummary.sugeridos + 1 : currentSummary.sugeridos,
+          transferencias: statusFinal === 'transferencia' ? currentSummary.transferencias + 1 : currentSummary.transferencias,
+          sem_match: Math.max(0, currentSummary.sem_match - 1), // Diminuir sem_match
+        };
+        
+        // Recalcular percentual
+        newSummary.percentageComplete = newSummary.total > 0 ? 
+          Math.round(((newSummary.conciliados + newSummary.transferencias) / newSummary.total) * 100) : 0;
+        
+        return newSummary;
+      });
+
+      // ✅ TOAST DE SUCESSO
+      toast({
+        title: statusFinal === 'transferencia' ? "Transferência Identificada" : "Sugestão Criada",
+        description: `${lancamentosSelecionados.length} lançamento${lancamentosSelecionados.length > 1 ? 's' : ''} vinculado${lancamentosSelecionados.length > 1 ? 's' : ''} com sucesso`,
+      });
+
+      console.log('✅ Processo coordenado concluído com sucesso');
+
+    } catch (error) {
+      console.error('❌ Erro ao criar sugestão coordenada:', error);
+      
+      const errorMessage = error instanceof Error ? error.message : "Falha ao criar sugestão de conciliação";
+      toast({
+        title: "Erro",
+        description: `Erro ao criar sugestão: ${errorMessage}`,
+        variant: "destructive",
+      });
+    }
+  };
+
   // Função para atualizar status do pair localmente (resposta imediata)
   const updatePairStatus = (pairId: string, newStatus: string) => {
     setPairs(currentPairs => {
@@ -1122,15 +1311,16 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
           ? { 
               ...pair, 
               status: newStatus as any,
-              // ✅ CORREÇÃO: Mapear corretamente conforme especificação das colunas
+              // ✅ CORREÇÃO: Mapear corretamente para reconciliation_status
               bankTransaction: pair.bankTransaction ? {
                 ...pair.bankTransaction,
                 status_conciliacao: (newStatus === 'conciliado' || newStatus === 'matched' ? 'conciliado' : 
                                    newStatus === 'ignored' ? 'ignorado' :
                                    newStatus === 'no_match' || newStatus === 'sem_match' ? 'pendente' : 'pendente') as 'pendente' | 'conciliado' | 'ignorado',
                 reconciliation_status: (newStatus === 'conciliado' || newStatus === 'matched' ? 'sugerido' : 
-                                      newStatus === 'ignored' ? 'sem_match' :
-                                      newStatus === 'no_match' || newStatus === 'sem_match' ? 'sem_match' : 'sem_match') as 'sugerido' | 'transferencia' | 'sem_match'
+                                  newStatus === 'transferencia' || newStatus === 'transfer' ? 'transferencia' :
+                                  newStatus === 'sugerido' || newStatus === 'suggested' ? 'sugerido' :
+                                  'sem_match') as 'sugerido' | 'transferencia' | 'sem_match' | 'conciliado' | 'pending' // ✅ CORREÇÃO: usar reconciliation_status
               } : pair.bankTransaction
             }
           : pair
@@ -1216,16 +1406,49 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
       switch (action) {
         case 'auto_conciliate':
           console.log('🔄 Executando conciliação automática...');
-          await handleAutoConciliate(pair);
           
-          // ✅ CORREÇÃO: RECARREGAR dados do banco em vez de apenas atualizar local
-          console.log('🔄 RECARREGANDO dados do banco após conciliação automática...');
-          await loadSuggestions();
-          
-          toast({
-            title: "Conciliação automática executada!",
-            description: "Transação conciliada automaticamente",
-          });
+          try {
+            await handleAutoConciliate(pair);
+            
+            // ✅ AGUARDAR processamento completo antes de recarregar
+            console.log('⏳ Aguardando processamento completo...');
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            // ✅ VERIFICAR se foi realmente conciliado
+            console.log('🔍 Verificando se foi persistido no banco...');
+            const verifyResponse = await fetch(`/api/reconciliation/status/${pair.bankTransaction?.id}`);
+            if (verifyResponse.ok) {
+              const statusData = await verifyResponse.json();
+              console.log('📊 Status após conciliação:', statusData);
+              
+              if (statusData.status_conciliacao !== 'conciliado') {
+                console.warn('⚠️ ATENÇÃO: Conciliação não foi persistida!');
+                toast({
+                  title: "Aviso",
+                  description: "A conciliação pode não ter sido persistida. Recarregue a página para verificar.",
+                  variant: "destructive",
+                });
+              } else {
+                console.log('✅ Conciliação confirmada no banco de dados');
+                toast({
+                  title: "Conciliação automática executada!",
+                  description: "Transação conciliada automaticamente",
+                });
+              }
+            }
+            
+            // ✅ RECARREGAR dados do banco
+            console.log('🔄 RECARREGANDO dados do banco após conciliação automática...');
+            await loadSuggestions();
+            
+          } catch (error) {
+            console.error('❌ Erro na conciliação automática:', error);
+            toast({
+              title: "Erro na Conciliação",
+              description: error instanceof Error ? error.message : "Erro desconhecido na conciliação",
+              variant: "destructive",
+            });
+          }
           return;
         case 'manual_conciliate':
           console.log('🔄 Executando conciliação manual...');
@@ -1242,16 +1465,49 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
           return;
         case 'confirm_transfer':
           console.log('🔄 Confirmando transferência...');
-          await handleConfirmTransfer(pair);
           
-          // ✅ CORREÇÃO: RECARREGAR dados do banco em vez de apenas atualizar local
-          console.log('🔄 RECARREGANDO dados do banco após confirmação de transferência...');
-          await loadSuggestions();
-          
-          toast({
-            title: "Transferência conciliada com sucesso!",
-            description: "Transferência confirmada",
-          });
+          try {
+            await handleConfirmTransfer(pair);
+            
+            // ✅ AGUARDAR processamento completo antes de recarregar
+            console.log('⏳ Aguardando processamento completo da transferência...');
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            // ✅ VERIFICAR se foi realmente conciliado
+            console.log('🔍 Verificando se transferência foi persistida no banco...');
+            const verifyResponse = await fetch(`/api/reconciliation/status/${pair.bankTransaction?.id}`);
+            if (verifyResponse.ok) {
+              const statusData = await verifyResponse.json();
+              console.log('📊 Status após confirmação de transferência:', statusData);
+              
+              if (statusData.status_conciliacao !== 'conciliado') {
+                console.warn('⚠️ ATENÇÃO: Transferência não foi persistida!');
+                toast({
+                  title: "Aviso",
+                  description: "A confirmação da transferência pode não ter sido persistida. Recarregue a página para verificar.",
+                  variant: "destructive",
+                });
+              } else {
+                console.log('✅ Transferência confirmada no banco de dados');
+                toast({
+                  title: "Transferência conciliada com sucesso!",
+                  description: "Transferência confirmada",
+                });
+              }
+            }
+            
+            // ✅ RECARREGAR dados do banco
+            console.log('🔄 RECARREGANDO dados do banco após confirmação de transferência...');
+            await loadSuggestions();
+            
+          } catch (error) {
+            console.error('❌ Erro na confirmação de transferência:', error);
+            toast({
+              title: "Erro na Confirmação",
+              description: error instanceof Error ? error.message : "Erro desconhecido na confirmação",
+              variant: "destructive",
+            });
+          }
           return;
         case 'unlink':
           console.log('🔄 Desconciliando...');
@@ -1276,15 +1532,57 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
             
             console.log('✅ handleUnlink executado com sucesso');
             
-            // ✅ CORREÇÃO CRÍTICA: RECARREGAR dados do banco em vez de apenas atualizar local
-            console.log('🔄 RECARREGANDO dados do banco para garantir sincronização...');
-            await loadSuggestions();
+            // ✅ CORREÇÃO CRÍTICA: Atualizar estado local IMEDIATAMENTE para feedback visual
+            console.log('🔄 Atualizando estado local para atualização imediata da cor...');
+            setPairs(currentPairs => {
+              return currentPairs.map(p => {
+                if (p.id === pair.id) {
+                  return {
+                    ...p,
+                    status: 'sem_match',
+                    systemTransaction: null,
+                    systemTransactions: [],
+                    bankTransaction: p.bankTransaction ? {
+                      ...p.bankTransaction,
+                      status_conciliacao: 'pendente',
+                      transation_status: 'sem_match' // ✅ Atualizar transation_status para sem_match
+                    } : p.bankTransaction
+                  };
+                }
+                return p;
+              });
+            });
+
+            // ✅ Atualizar summary local
+            setSummary(currentSummary => {
+              if (!currentSummary) return currentSummary;
+              
+              const newSummary = { ...currentSummary };
+              
+              // Decrementar do status atual
+              if (pair.status === 'sugerido') {
+                newSummary.sugeridos = Math.max(0, newSummary.sugeridos - 1);
+              } else if (pair.status === 'transferencia') {
+                newSummary.transferencias = Math.max(0, newSummary.transferencias - 1);
+              } else if (pair.status === 'conciliado') {
+                newSummary.conciliados = Math.max(0, newSummary.conciliados - 1);
+              }
+              
+              // Incrementar sem_match
+              newSummary.sem_match = newSummary.sem_match + 1;
+              
+              // Recalcular percentual
+              newSummary.percentageComplete = newSummary.total > 0 ? 
+                Math.round(((newSummary.conciliados + newSummary.transferencias) / newSummary.total) * 100) : 0;
+              
+              return newSummary;
+            });
             
             toast({
-              title: "Desconciliação executada com sucesso!",
-              description: "Transação desconciliada e dados atualizados",
+              title: "Transação desvinculada!",
+              description: "A transação foi desvinculada com sucesso",
             });
-            console.log('✅ Unlink concluído com sucesso e dados recarregados');
+            console.log('✅ Unlink concluído com atualização local imediata');
             return;
           } catch (unlinkError) {
             console.error('💥 Erro específico no handleUnlink:', unlinkError);
@@ -1525,7 +1823,10 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
               console.log('✅ JSON parseado com sucesso:', errorData);
             } catch (parseError) {
               console.warn('⚠️ Não foi possível fazer parse do JSON:', parseError);
-              errorData = { error: rawResponseText, parseError: parseError.message };
+              errorData = { 
+                error: rawResponseText, 
+                parseError: parseError instanceof Error ? parseError.message : 'Erro desconhecido' 
+              };
               errorText = rawResponseText || `Erro HTTP ${response.status}: ${response.statusText}`;
             }
           } else {
@@ -1535,7 +1836,10 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
           }
         } catch (textError) {
           console.error('💥 Erro ao obter texto da resposta:', textError);
-          errorData = { error: 'Erro ao ler resposta', textError: textError.message };
+          errorData = { 
+            error: 'Erro ao ler resposta', 
+            textError: textError instanceof Error ? textError.message : 'Erro desconhecido' 
+          };
           errorText = `Erro HTTP ${response.status}: ${response.statusText}`;
         }
         
@@ -1745,7 +2049,7 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
     console.log('🚫 Ignorando transação:', {
       bank_transaction_id: pair.bankTransaction.id,
       current_status: pair.bankTransaction.status_conciliacao,
-      current_reconciliation_status: pair.bankTransaction.reconciliation_status,
+      current_transation_status: pair.bankTransaction.transation_status,
       reason: 'user_ignored'
     });
 
@@ -2836,36 +3140,70 @@ ORDER BY tm.created_at DESC;
       </Dialog>
 
       {/* Modal de Buscar Lançamentos */}
-      <Dialog open={showBuscarLancamentosModal} onOpenChange={setShowBuscarLancamentosModal}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Buscar Lançamentos</DialogTitle>
-          </DialogHeader>
-          {selectedBankTransaction && (
-            <BuscarLancamentosModal
-              bankTransaction={selectedBankTransaction}
-              onSelect={(lancamento) => {
-                // Criar pair temporário para processar conciliação
-                const tempPair: ReconciliationPair = {
-                  id: `temp_${Date.now()}`,
-                  bankTransaction: selectedBankTransaction,
-                  systemTransaction: lancamento,
-                  status: 'sugerido',
-                  matchScore: 100,
-                  matchReason: 'Seleção manual',
-                  confidenceLevel: 'manual'
-                };
-                
-                processReconciliationDecision(tempPair, 'manual_conciliate', {
-                  selectedTransaction: lancamento
-                });
-                handleCloseModals();
-              }}
-              onCancel={handleCloseModals}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      {selectedBankTransaction && (
+        <BuscarLancamentosModalComponent
+          isOpen={showBuscarLancamentosModal}
+          onClose={handleCloseModals}
+          bankTransaction={selectedBankTransaction}
+          onCreateSuggestion={(suggestionData: {
+            selectedLancamentos: any[];
+            primaryLancamentoId?: string | null;
+            isValidMatch: boolean;
+            totalValue: number;
+            hasDiscrepancy: boolean;
+            useExistingHandling?: boolean;
+            matchType?: 'exact_match' | 'manual' | 'multiple_transactions';
+            confidenceLevel?: 'high' | 'medium' | 'low';
+            validation?: any;
+            summary?: any;
+          }) => {
+            // ✅ CRITICAL: Capturar bankTransaction ANTES do modal fechar
+            const currentBankTransaction = selectedBankTransaction;
+            
+            console.log('📊 Modal suggestion data received:', {
+              suggestionData,
+              currentBankTransaction: currentBankTransaction ? {
+                id: currentBankTransaction.id,
+                amount: currentBankTransaction.amount,
+                memo: currentBankTransaction.memo
+              } : null
+            });
+            
+            // ✅ CRITICAL: Verificar se temos a transação bancária
+            if (!currentBankTransaction) {
+              console.error('❌ currentBankTransaction é null no callback do modal!');
+              toast({
+                title: "Erro",
+                description: "Transação bancária não encontrada. Tente novamente.",
+                variant: "destructive",
+              });
+              return;
+            }
+            
+            const formattedSuggestion = {
+              selectedLancamentos: suggestionData.selectedLancamentos,
+              primaryLancamentoId: suggestionData.primaryLancamentoId || null,
+              isValidMatch: suggestionData.isValidMatch,
+              totalValue: suggestionData.totalValue,
+              hasDiscrepancy: suggestionData.hasDiscrepancy,
+              useExistingHandling: suggestionData.useExistingHandling || false,
+              matchType: suggestionData.matchType || 'manual' as const,
+              confidenceLevel: suggestionData.confidenceLevel || 'medium' as const,
+              validation: suggestionData.validation || {},
+              summary: suggestionData.summary || { source: 'modal', useExistingHandling: suggestionData.useExistingHandling }
+            };
+
+            console.log('📊 Formatted suggestion for handleCreateSuggestion:', {
+              bankTransactionId: currentBankTransaction.id,
+              bankTransactionValid: !!currentBankTransaction,
+              formattedSuggestion
+            });
+            
+            // Criar sugestão e atualizar estado local
+            handleCreateSuggestion(currentBankTransaction, formattedSuggestion);
+          }}
+        />
+      )}
         </>
       )}
     </div>
@@ -3265,16 +3603,16 @@ function ReconciliationCard({
     return isReconciled;
   };
 
-  // ✅ FUNÇÃO CORRIGIDA: Cores baseadas no reconciliation_status do banco
+  // ✅ FUNÇÃO CORRIGIDA: Cores baseadas no transation_status do banco
   const getCardBackgroundColor = (status: string, pair: ReconciliationPair) => {
     const bankStatus = pair.bankTransaction?.status_conciliacao;
-    const reconciliationStatus = pair.bankTransaction?.reconciliation_status;
+    const transationStatus = pair.bankTransaction?.transation_status;
     
-    console.log('🎨 Determinando cor do card (atualizado):', {
+    console.log('🎨 Determinando cor do card (CORRIGIDO):', {
       pairId: pair.id,
       frontendStatus: status,
       bankStatus,
-      reconciliationStatus,
+      transationStatus,
       hasSystemMatch: !!pair.systemTransaction
     });
 
@@ -3290,33 +3628,53 @@ function ReconciliationCard({
       return 'bg-green-100 border-green-400 shadow-lg'; // VERDE = CONCILIADO
     }
     
-    // ✅ REGRA 3: Para pendentes, usar reconciliation_status do banco
+    // ✅ REGRA 3: Para pendentes, usar transation_status do banco
     if (bankStatus === 'pendente') {
-      switch (reconciliationStatus) {
+      switch (transationStatus) {
         case 'transferencia':
-          console.log('🎨 Aplicando cor TRANSFERÊNCIA (azul) - via reconciliation_status');
+          console.log('🎨 Aplicando cor TRANSFERÊNCIA (azul) - via transation_status');
           return 'bg-blue-100 border-blue-400 shadow-md'; // AZUL = TRANSFERÊNCIA
           
         case 'sugerido':
-          console.log('🎨 Aplicando cor SUGESTÃO (amarelo) - via reconciliation_status');
+          console.log('🎨 Aplicando cor SUGESTÃO (amarelo) - via transation_status');
           return 'bg-yellow-50 border-yellow-300 hover:bg-yellow-100'; // AMARELO = SUGESTÃO
           
         case 'sem_match':
         default:
-          console.log('🎨 Aplicando cor SEM MATCH (branco) - via reconciliation_status');
+          console.log('🎨 Aplicando cor SEM MATCH (branco) - via transation_status');
           return 'bg-white border-gray-200 hover:bg-gray-50'; // BRANCO = SEM MATCH
       }
     }
     
-    // Padrão (não deveria chegar aqui)
-    console.log('🎨 Aplicando cor PADRÃO (branco)');
-    return 'bg-white border-gray-300 hover:bg-gray-50';
+    // ✅ REGRA 4: Fallback para status do pair (frontend) se não há status do banco
+    console.log('🎨 Usando fallback para status do pair:', status);
+    switch (status) {
+      case 'conciliado':
+      case 'matched':
+        console.log('🎨 Aplicando cor CONCILIADO (verde) - fallback');
+        return 'bg-green-100 border-green-400 shadow-lg';
+      case 'transferencia':
+      case 'transfer':
+        console.log('🎨 Aplicando cor TRANSFERÊNCIA (azul) - fallback');
+        return 'bg-blue-100 border-blue-400 shadow-md';
+      case 'sugerido':
+      case 'suggested':
+        console.log('🎨 Aplicando cor SUGESTÃO (amarelo) - fallback');
+        return 'bg-yellow-50 border-yellow-300 hover:bg-yellow-100';
+      case 'sem_match':
+      case 'no_match':
+        console.log('🎨 Aplicando cor SEM MATCH (branco) - fallback');
+        return 'bg-white border-gray-200 hover:bg-gray-50';
+      default:
+        console.log('🎨 Aplicando cor PADRÃO (branco)');
+        return 'bg-white border-gray-300 hover:bg-gray-50';
+    }
   };
 
   return (
     <div className="flex gap-3 items-center min-h-[100px] mb-4">
       {/* Card Esquerdo - Transação OFX */}
-      <div className={`flex-1 p-4 rounded-lg border-2 relative ${getCardBackgroundColor(pair.status, pair)}`}>
+      <div className={`flex-1 p-4 rounded-lg border-2 relative min-h-[200px] flex flex-col ${getCardBackgroundColor(pair.status, pair)}`}>
         {/* Ícone de check para cards conciliados */}
         {isTransactionReconciled(pair) && (
           <div className="absolute top-2 right-2">
@@ -3420,12 +3778,16 @@ function ReconciliationCard({
         {!isTransactionReconciled(pair) && (pair.status === 'suggested' || pair.status === 'sugerido') && (
           <>
             <div className="text-center">
-              <X className="h-5 w-5 text-orange-500 mx-auto mb-1" />
-              <span className="text-xs text-orange-500 font-medium">sugerido</span>
+              <div className="flex items-center justify-center w-8 h-8 bg-orange-500 rounded-full mx-auto mb-2">
+                <AlertCircle className="h-5 w-5 text-white" />
+              </div>
+              <span className="inline-block px-3 py-1 bg-orange-100 text-orange-800 text-xs rounded-full font-medium">
+                SUGERIDO
+              </span>
             </div>
             <Button 
               size="sm" 
-              className="bg-gray-800 text-white w-36"
+              className="bg-gray-800 text-white hover:bg-gray-900 w-36"
               onClick={() => onProcessReconciliationDecision(pair, 'auto_conciliate')}
             >
               Conciliar
@@ -3433,11 +3795,11 @@ function ReconciliationCard({
             <Button 
               size="sm" 
               variant="outline"
-              className="w-36 border-orange-300 text-gray-800 bg-white"
+              className="w-36 border-gray-300 text-gray-700 hover:bg-gray-50"
               onClick={() => onProcessReconciliationDecision(pair, 'reject')}
             >
-              <X className="w-4 h-4 mr-2 text-orange-500" />
-              desvincular
+              <X className="w-4 h-4 mr-2" />
+              Desvincular
             </Button>
           </>
         )}
@@ -3560,7 +3922,7 @@ function ReconciliationCard({
       </div>
 
       {/* Card Direito - Sistema ERP */}
-      <div className={`flex-1 p-4 rounded-lg border-2 relative ${getCardBackgroundColor(pair.status, pair)}`}>
+      <div className={`flex-1 p-4 rounded-lg border-2 relative min-h-[200px] flex flex-col ${getCardBackgroundColor(pair.status, pair)}`}>
         {/* Ícone de check para cards conciliados */}
         {isTransactionReconciled(pair) && (
           <div className="absolute top-2 right-2">
@@ -3573,7 +3935,16 @@ function ReconciliationCard({
         {((pair.status === 'matched' || pair.status === 'conciliado' || 
           pair.status === 'suggested' || pair.status === 'sugerido' ||
           pair.status === 'transfer' || pair.status === 'transferencia') && pair.systemTransaction) ? (
-          <div className="flex items-start gap-3">
+          <div className="relative flex items-start gap-3">
+            {/* ✅ TAG SIMPLES NO CANTO SUPERIOR DIREITO */}
+            {(pair.status === 'suggested' || pair.status === 'sugerido') && (
+              <div className="absolute -top-2 -right-2 z-10">
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-600 text-white shadow-sm">
+                  LANÇAMENTOS
+                </span>
+              </div>
+            )}
+            
             <input type="checkbox" className="mt-1" />
             <div className="flex-1">
               <div className="text-sm text-gray-700 mb-1">
@@ -3591,9 +3962,15 @@ function ReconciliationCard({
                   {pair.systemTransaction.descricao || 'Sem descrição'}
                 </p>
                 <div className="flex items-center gap-2">
-                  <p className="text-xs text-gray-500">
-                    Origem: sistema
-                  </p>
+                  <p className="text-xs text-gray-500">Origem: sistema</p>
+                  
+                  {/* Badge de status para sugestões */}
+                  {(pair.status === 'suggested' || pair.status === 'sugerido') && (
+                    <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded-full">
+                      SUGERIDO
+                    </span>
+                  )}
+                  
                   {/* Badge de transferência para Sistema */}
                   {isTransferSystem(pair.systemTransaction) && (
                     <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">
@@ -3601,6 +3978,16 @@ function ReconciliationCard({
                     </span>
                   )}
                 </div>
+                
+                {/* ✅ MOSTRAR MÚLTIPLOS LANÇAMENTOS SE HOUVER */}
+                {pair.systemTransactions && pair.systemTransactions.length > 1 && (
+                  <div className="mt-2 text-xs text-blue-600">
+                    + {pair.systemTransactions.length - 1} lançamento(s) adicional(is)
+                    <div className="text-xs text-gray-500 mt-1">
+                      Total: {formatCurrency(pair.systemTransactions.reduce((total, tx) => total + Math.abs(tx.valor), 0))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

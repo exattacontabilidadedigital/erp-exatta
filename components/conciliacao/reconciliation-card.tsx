@@ -31,11 +31,14 @@ interface SystemTransaction {
 interface ReconciliationPair {
   id: string;
   bankTransaction: BankTransaction;
-  systemTransactions: SystemTransaction[];
+  systemTransaction?: SystemTransaction; // Principal (para compatibilidade)
+  systemTransactions?: SystemTransaction[]; // Múltiplos (novo)
   status: 'conciliado' | 'sugerido' | 'conflito' | 'pendente' | 'sem_match';
   confidenceLevel: '100%' | 'provavel' | 'manual';
   matchScore?: number;
   matchReason?: string;
+  hasDiscrepancy?: boolean; // Nova propriedade
+  totalValue?: number; // Para múltiplos lançamentos
 }
 
 interface ReconciliationCardProps {
@@ -44,6 +47,7 @@ interface ReconciliationCardProps {
   onIgnore: (pair: ReconciliationPair) => void;
   onCreateLancamento: (pair: ReconciliationPair) => void;
   onCreateTransferencia: (pair: ReconciliationPair) => void;
+  onBuscarLancamentos?: (pair: ReconciliationPair) => void; // Nova prop
 }
 
 export function ReconciliationCard({
@@ -51,7 +55,8 @@ export function ReconciliationCard({
   onConciliate,
   onIgnore,
   onCreateLancamento,
-  onCreateTransferencia
+  onCreateTransferencia,
+  onBuscarLancamentos
 }: ReconciliationCardProps) {
   const [selectedSystemTransactionId, setSelectedSystemTransactionId] = useState<string | null>(null);
 
@@ -73,14 +78,20 @@ export function ReconciliationCard({
 
   // Sistema de match sugerido: seleciona automaticamente a transação mais próxima
   const suggestedMatch = useMemo(() => {
-    if (!pair.systemTransactions || pair.systemTransactions.length === 0) return null;
+    const transactions = pair.systemTransactions || (pair.systemTransaction ? [pair.systemTransaction] : []);
+    if (transactions.length === 0) return null;
     // Match mais próximo por valor absoluto
-    return pair.systemTransactions.reduce((prev, curr) => {
+    return transactions.reduce((prev, curr) => {
       const prevDiff = Math.abs(prev.valor - pair.bankTransaction.amount);
       const currDiff = Math.abs(curr.valor - pair.bankTransaction.amount);
       return currDiff < prevDiff ? curr : prev;
     });
-  }, [pair.systemTransactions, pair.bankTransaction.amount]);
+  }, [pair.systemTransactions, pair.systemTransaction, pair.bankTransaction.amount]);
+
+  // Obter lista de transações do sistema (compatibilidade com formato antigo e novo)
+  const systemTransactions = useMemo(() => {
+    return pair.systemTransactions || (pair.systemTransaction ? [pair.systemTransaction] : []);
+  }, [pair.systemTransactions, pair.systemTransaction]);
 
   return (
     <Card className="mb-4 hover:shadow-lg transition-shadow">
@@ -113,8 +124,19 @@ export function ReconciliationCard({
             </div>
           )}
 
-          {/* Botão de conciliação automática */}
+          {/* Botão de conciliação automática para sugestões */}
           {pair.status === 'sugerido' && suggestedMatch && (
+            <Button
+              size="sm"
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+              onClick={() => onConciliate(pair, suggestedMatch)}
+            >
+              ✓ Confirmar Sugestão
+            </Button>
+          )}
+
+          {/* Botão de conciliação automática para outros status */}
+          {pair.status !== 'sugerido' && pair.status !== 'conciliado' && suggestedMatch && (
             <Button
               size="sm"
               className="bg-purple-600 hover:bg-purple-700 text-white"
@@ -153,20 +175,20 @@ export function ReconciliationCard({
           <div className="flex-1 space-y-2 mb-4">
             <div className="text-xs font-medium text-gray-600 mb-2">LANÇAMENTOS DO SISTEMA</div>
             
-            {pair.systemTransactions.length === 0 ? (
+            {systemTransactions.length === 0 ? (
               <div className="text-gray-400 text-sm text-center py-4">
                 Nenhum lançamento encontrado
               </div>
             ) : (
               <div className="space-y-2 max-h-32 overflow-y-auto">
-                {pair.systemTransactions.map(tx => (
+                {systemTransactions.map((tx, index) => (
                   <div
                     key={tx.id}
                     className={`p-2 border rounded cursor-pointer transition-colors ${
                       selectedSystemTransactionId === tx.id 
                         ? 'bg-blue-100 border-blue-400' 
                         : 'hover:bg-gray-50 border-gray-200'
-                    }`}
+                    } ${pair.status === 'sugerido' ? 'bg-orange-50 border-orange-200' : ''}`}
                     onClick={() => setSelectedSystemTransactionId(tx.id)}
                   >
                     <div className="font-medium text-sm">{tx.descricao}</div>
@@ -174,25 +196,70 @@ export function ReconciliationCard({
                     <div className={`font-medium text-sm ${tx.tipo === 'receita' ? 'text-green-600' : tx.tipo === 'despesa' ? 'text-red-600' : 'text-blue-600'}`}>
                       {formatCurrency(tx.valor)}
                     </div>
-                    <div className="text-xs text-gray-500 capitalize">
-                      {tx.tipo}
-                      {tx.numero_documento && ` • Doc: ${tx.numero_documento}`}
+                    <div className="text-xs text-gray-500 capitalize flex items-center justify-between">
+                      <span>
+                        {tx.tipo}
+                        {tx.numero_documento && ` • Doc: ${tx.numero_documento}`}
+                      </span>
+                      {pair.status === 'sugerido' && (
+                        <div className="flex items-center gap-1">
+                          {systemTransactions.length > 1 && (
+                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                              #{index + 1}
+                            </span>
+                          )}
+                          <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded-full">
+                            SUGERIDO
+                          </span>
+                          {pair.matchScore === 100 && (
+                            <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                              MATCH EXATO
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
+                
+                {/* Mostrar total quando há múltiplos lançamentos */}
+                {systemTransactions.length > 1 && pair.status === 'sugerido' && (
+                  <div className="mt-2 pt-2 border-t bg-gray-50 p-2 rounded">
+                    <div className="text-sm font-medium flex justify-between">
+                      <span>Total Selecionado:</span>
+                      <span>{formatCurrency(systemTransactions.reduce((total, tx) => total + Math.abs(tx.valor), 0))}</span>
+                    </div>
+                    {pair.totalValue && Math.abs(pair.totalValue - Math.abs(pair.bankTransaction.amount)) < 0.01 && (
+                      <div className="text-green-600 text-xs">✅ Total compatível com OFX</div>
+                    )}
+                    {pair.hasDiscrepancy && (
+                      <div className="text-orange-600 text-xs">⚠️ Possui diferenças detectadas</div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {/* Botões de Ação */}
           <div className="border-t pt-3 space-y-1">
-            <Button size="sm" variant="outline" onClick={() => onCreateLancamento(pair)} className="w-full">
-              <Plus className="h-4 w-4 mr-1" /> Criar Lançamento
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => onCreateTransferencia(pair)} className="w-full">
-              <ArrowLeftRight className="h-4 w-4 mr-1" /> Transferência
-            </Button>
-            {pair.status !== 'sem_match' && (
+            {systemTransactions.length === 0 && pair.status === 'sem_match' && (
+              <>
+                <Button size="sm" variant="outline" onClick={() => onCreateLancamento(pair)} className="w-full">
+                  <Plus className="h-4 w-4 mr-1" /> Criar Lançamento
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => onCreateTransferencia(pair)} className="w-full">
+                  <ArrowLeftRight className="h-4 w-4 mr-1" /> Transferência
+                </Button>
+                {onBuscarLancamentos && (
+                  <Button size="sm" variant="outline" onClick={() => onBuscarLancamentos(pair)} className="w-full border-blue-300 text-blue-700 hover:bg-blue-50">
+                    <Search className="h-4 w-4 mr-1" /> Buscar Lançamentos
+                  </Button>
+                )}
+              </>
+            )}
+            
+            {pair.status !== 'sem_match' && pair.status !== 'conciliado' && (
               <Button size="sm" variant="destructive" onClick={() => onIgnore(pair)} className="w-full">
                 <X className="h-4 w-4 mr-1" /> Ignorar
               </Button>

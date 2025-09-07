@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/contexts/auth-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -135,11 +136,35 @@ export function ContaBancariaSelect({
 
   const getDisplayText = () => {
     if (value.length === 0) return placeholder
+    
     if (value.length === 1) {
       const conta = contas.find(c => c.id === value[0])
-      return conta ? formatarConta(conta) : placeholder
+      return conta ? conta.banco_nome : placeholder
     }
-    return `${value.length} contas selecionadas`
+    
+    if (value.length <= 3) {
+      const nomesBancos = value
+        .map(id => contas.find(c => c.id === id)?.banco_nome)
+        .filter(Boolean)
+      return nomesBancos.join(', ')
+    }
+    
+    return `${value.length} bancos selecionados`
+  }
+
+  const getSelectedBanks = () => {
+    if (value.length === 0) return []
+    
+    return value
+      .map(id => {
+        const conta = contas.find(c => c.id === id)
+        return conta ? {
+          id: conta.id,
+          name: conta.banco_nome,
+          fullName: formatarConta(conta)
+        } : null
+      })
+      .filter((bank): bank is NonNullable<typeof bank> => bank !== null)
   }
 
   return (
@@ -156,10 +181,42 @@ export function ContaBancariaSelect({
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className="w-full justify-between text-left font-normal h-10"
+            className={`w-full justify-between text-left font-normal ${
+              value.length > 1 && value.length <= 3 ? 'min-h-10 h-auto py-2' : 'h-10'
+            }`}
           >
-            <span className="truncate">{getDisplayText()}</span>
-            <div className="flex items-center gap-1">
+            <div className="flex flex-1 flex-wrap items-center gap-1 overflow-hidden min-w-0">
+              {value.length === 0 ? (
+                <span className="text-muted-foreground">{placeholder}</span>
+              ) : value.length === 1 ? (
+                <span className="truncate">{getDisplayText()}</span>
+              ) : value.length <= 3 ? (
+                getSelectedBanks().map((bank) => (
+                  <Badge
+                    key={bank.id}
+                    variant="secondary"
+                    className="h-6 px-2 text-xs truncate max-w-24 sm:max-w-32 flex-shrink-0 flex items-center gap-1"
+                    title={bank.fullName}
+                  >
+                    <span className="truncate">{bank.name}</span>
+                    <button
+                      className="ml-1 h-4 w-4 rounded-full hover:bg-gray-400/50 hover:text-gray-700 flex items-center justify-center transition-colors duration-150 flex-shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleToggleConta(bank.id)
+                      }}
+                      aria-label={`Remover ${bank.name}`}
+                      type="button"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))
+              ) : (
+                <span className="text-sm truncate">{getDisplayText()}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 ml-1 flex-shrink-0">
               {value.length > 0 && (
                 <div
                   className="h-4 w-4 p-0 hover:bg-gray-200 rounded cursor-pointer flex items-center justify-center"
