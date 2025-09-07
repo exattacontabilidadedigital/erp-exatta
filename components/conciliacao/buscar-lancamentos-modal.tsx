@@ -158,10 +158,32 @@ export default function BuscarLancamentosModal({
 
   // ✅ NOVAS FUNÇÕES DE VALIDAÇÃO E COMPARAÇÃO
   
-  // Função para formatar data para comparação
+  // Função para formatar data para comparação (sem problema de timezone)
   const formatDateForComparison = (date: string | Date) => {
     const d = new Date(date);
-    return d.toISOString().split('T')[0]; // YYYY-MM-DD
+    // Usar getFullYear, getMonth, getDate para evitar problema de timezone
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`; // YYYY-MM-DD
+  };
+
+  // Função para criar data local sem problema de timezone
+  const criarDataLocal = (dateString: string) => {
+    if (dateString.includes('T')) {
+      // Se tem horário, usar apenas a parte da data
+      dateString = dateString.split('T')[0];
+    }
+    const [year, month, day] = dateString.split('-');
+    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  };
+
+  // Função para converter data para string ISO local (sem UTC)
+  const formatarDataParaAPI = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
   
   // Função para formatar moeda
@@ -490,13 +512,13 @@ export default function BuscarLancamentosModal({
           dataInicio.setDate(dataTransacao.getDate() - toleranciaDias);
           dataFim.setDate(dataTransacao.getDate() + toleranciaDias);
           
-          params.append('dataInicio', dataInicio.toISOString().split('T')[0]);
-          params.append('dataFim', dataFim.toISOString().split('T')[0]);
+          params.append('dataInicio', formatarDataParaAPI(dataInicio));
+          params.append('dataFim', formatarDataParaAPI(dataFim));
           
           console.log('📅 Filtro de data aplicado:', {
-            dataTransacao: dataTransacao.toISOString().split('T')[0],
-            dataInicio: dataInicio.toISOString().split('T')[0],
-            dataFim: dataFim.toISOString().split('T')[0],
+            dataTransacao: formatarDataParaAPI(dataTransacao),
+            dataInicio: formatarDataParaAPI(dataInicio),
+            dataFim: formatarDataParaAPI(dataFim),
             toleranciaDias: `±${toleranciaDias} dias`
           });
         }
@@ -602,8 +624,8 @@ export default function BuscarLancamentosModal({
           dataInicio.setDate(dataTransacao.getDate() - toleranciaDias);
           dataFim.setDate(dataTransacao.getDate() + toleranciaDias);
           
-          fallbackParams.append('dataInicio', dataInicio.toISOString().split('T')[0]);
-          fallbackParams.append('dataFim', dataFim.toISOString().split('T')[0]);
+          fallbackParams.append('dataInicio', formatarDataParaAPI(dataInicio));
+          fallbackParams.append('dataFim', formatarDataParaAPI(dataFim));
           
           console.log('📅 Fallback 1 - Tolerância mínima:', {
             valorTransacao,
@@ -611,8 +633,8 @@ export default function BuscarLancamentosModal({
             valorMax: valorMaxFallback1.toFixed(2),
             toleranciaValor: `±${(toleranciaValorFallback1 * 100)}%`,
             toleranciaDias: `±${toleranciaDias} dias`,
-            dataInicio: dataInicio.toISOString().split('T')[0],
-            dataFim: dataFim.toISOString().split('T')[0]
+            dataInicio: formatarDataParaAPI(dataInicio),
+            dataFim: formatarDataParaAPI(dataFim)
           });
         }
         
@@ -670,16 +692,16 @@ export default function BuscarLancamentosModal({
               dataInicio.setDate(dataTransacao.getDate() - toleranciaDiasFallback2);
               dataFim.setDate(dataTransacao.getDate() + toleranciaDiasFallback2);
               
-              fallback2Params.append('dataInicio', dataInicio.toISOString().split('T')[0]);
-              fallback2Params.append('dataFim', dataFim.toISOString().split('T')[0]);
+              fallback2Params.append('dataInicio', formatarDataParaAPI(dataInicio));
+              fallback2Params.append('dataFim', formatarDataParaAPI(dataFim));
               
               console.log('📅 Fallback 2 - Tolerância expandida:', {
                 toleranciaValor: `±${(toleranciaValorFallback2 * 100)}%`,
                 toleranciaDias: `±${toleranciaDiasFallback2} dias`,
                 valorMin: valorMinFallback2.toFixed(2),
                 valorMax: valorMaxFallback2.toFixed(2),
-                dataInicio: dataInicio.toISOString().split('T')[0],
-                dataFim: dataFim.toISOString().split('T')[0]
+                dataInicio: formatarDataParaAPI(dataInicio),
+                dataFim: formatarDataParaAPI(dataFim)
               });
             }
 
@@ -955,8 +977,51 @@ export default function BuscarLancamentosModal({
   // Formatação de data para exibição (formato brasileiro)
   const formatarData = (dateString: string) => {
     if (!dateString) return '';
-    const date = new Date(dateString);
+    
+    // Se a data está no formato ISO (YYYY-MM-DD), usar diretamente
+    if (dateString.includes('-') && dateString.length === 10) {
+      const [year, month, day] = dateString.split('-');
+      return `${day}/${month}/${year}`;
+    }
+    
+    // Para outros formatos, usar o Date mas com cuidado no timezone
+    const date = new Date(dateString + 'T00:00:00'); // Força horário local
     return date.toLocaleDateString('pt-BR');
+  };
+
+  // Função para converter data do formato brasileiro (DD/MM/YYYY) para ISO (YYYY-MM-DD)
+  const formatarDataParaISO = (dateString: string) => {
+    if (!dateString) return '';
+    
+    // Se já está no formato ISO, retornar como está
+    if (dateString.includes('-') && dateString.length === 10) {
+      return dateString;
+    }
+    
+    // Se está no formato brasileiro DD/MM/YYYY
+    if (dateString.includes('/')) {
+      const [day, month, year] = dateString.split('/');
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    
+    return dateString;
+  };
+
+  // Função para converter data ISO para o formato do input date (garante timezone local)
+  const formatarDataParaInput = (dateString: string) => {
+    if (!dateString) return '';
+    
+    // Se já está no formato correto para input
+    if (dateString.includes('-') && dateString.length === 10) {
+      return dateString;
+    }
+    
+    // Converter para o formato correto
+    const date = new Date(dateString + 'T00:00:00');
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   // Formatação de valores em moeda brasileira
@@ -1188,7 +1253,9 @@ export default function BuscarLancamentosModal({
           </div>
         )}
 
-        {/* ✅ NOVA SEÇÃO: Legenda das estrelas */}
+        
+        
+        {/* ✅ NOVA SEÇÃO: Legenda das estrelas 
         <div className="flex-shrink-0 bg-gray-50 border border-gray-200 rounded-lg p-3 mb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-1">
@@ -1214,8 +1281,7 @@ export default function BuscarLancamentosModal({
             </div>
           </div>
         </div>
-
-
+        */}
           {/* Linha de informações e controles */}
           <div className="flex justify-between items-center pt-2">
             <div className="flex items-center space-x-4">
@@ -1369,10 +1435,13 @@ export default function BuscarLancamentosModal({
                         />
                       </TableHead>
                       <TableHead className="w-16 text-center font-medium">Primário</TableHead>
+                      <TableHead className="w-24 font-medium">Data</TableHead>
                       <TableHead className="w-32 font-medium">Documento</TableHead>
-                      <TableHead className="font-medium min-w-0">Descrição</TableHead>
+                      <TableHead className="font-medium min-w-0">Descrição</TableHead>                      
+                      <TableHead className="w-40 text-center font-medium">Conta Bancária</TableHead>
+                      <TableHead className="w-24 text-center font-medium">Status</TableHead>
                       <TableHead className="w-40 font-medium">Plano de Contas</TableHead>
-                      <TableHead className="w-28 text-right font-medium">Valor</TableHead>
+                      <TableHead className="w-28 text-right font-medium">Valor</TableHead>                      
                       <TableHead className="w-20 text-center font-medium">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1502,40 +1571,52 @@ export default function BuscarLancamentosModal({
                               return null;
                             })()}
                           </TableCell>
-                          
-                          {/* 3. Documento */}
+                          <TableCell className="text-sm">
+                            <span className={`${validation.dateMatch ? 'text-green-600' : 'text-gray-700'}`}>
+                              {/* ✅ Campo: data_lancamento da tabela lancamentos */}
+                              {formatarData(lancamento.data_lancamento)}
+                            </span>
+                          </TableCell>
                           <TableCell className="text-sm">
                             <div className="truncate" title={lancamento.numero_documento}>
                               {/* ✅ Campo: numero_documento da tabela lancamentos */}
                               {lancamento.numero_documento || '-'}
                             </div>
                           </TableCell>
-                          
-                          {/* 4. Descrição */}
                           <TableCell className="text-sm min-w-0">
                             <div className="truncate" title={lancamento.descricao}>
                               {/* ✅ Campo: descricao da tabela lancamentos */}
                               {lancamento.descricao || 'Sem descrição'}
                             </div>
+                          </TableCell>                          
+                          <TableCell className="text-center text-sm">
+                            <div className="truncate max-w-40" title={getNomeContaBancaria(lancamento)}>
+                              {/* ✅ Campo: conta_bancaria_id da tabela lancamentos */}
+                              {getNomeContaBancaria(lancamento)}
+                            </div>
                           </TableCell>
-                          
-                          {/* 5. Plano de Contas */}
+                          <TableCell className="text-center text-sm">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              lancamento.status === 'pendente' 
+                                ? 'bg-yellow-100 text-yellow-800' 
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {/* ✅ Campo: status da tabela lancamentos */}
+                              {lancamento.status || 'pendente'}
+                            </span>
+                          </TableCell>
                           <TableCell className="text-sm">
                             <div className="truncate" title={lancamento.plano_contas?.nome}>
                               {/* ✅ Campo: plano_contas.nome via JOIN da tabela lancamentos */}
                               {lancamento.plano_contas?.nome || '-'}
                             </div>
                           </TableCell>
-                          
-                          {/* 6. Valor */}
                           <TableCell className="text-sm font-medium text-right">
                             <span className={`${validation.valueMatch ? 'text-green-600' : (lancamento.valor >= 0 ? 'text-green-700' : 'text-red-700')}`}>
                               {/* ✅ Campo: valor da tabela lancamentos */}
                               R$ {formatarMoeda(lancamento.valor)}
                             </span>
-                          </TableCell>
-                          
-                          {/* 7. Ações */}
+                          </TableCell>                          
                           <TableCell className="text-center">
                             <div className="flex items-center justify-center gap-1">
                               <Button
