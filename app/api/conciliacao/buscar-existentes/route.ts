@@ -147,25 +147,22 @@ export async function GET(request: NextRequest) {
       console.log(`🔍 Filtro aplicado: data <= ${dataFim}`);
     }
 
-    // Aplicar filtros de valor APENAS se NÃO for busca por valor absoluto
-    if (!buscarValorAbsoluto) {
-      if (valorMin) {
-        const valorMinFloat = parseFloat(valorMin);
-        if (!isNaN(valorMinFloat)) {
-          query = query.gte('valor', valorMinFloat);
-          console.log(`🔍 Filtro aplicado: valor >= ${valorMinFloat}`);
-        }
+    // Aplicar filtros de valor SEMPRE no SQL para evitar problemas de paginação
+    // O filtro absoluto (valor exato) será aplicado via SQL também
+    if (valorMin) {
+      const valorMinFloat = parseFloat(valorMin);
+      if (!isNaN(valorMinFloat)) {
+        query = query.gte('valor', valorMinFloat);
+        console.log(`🔍 Filtro aplicado: valor >= ${valorMinFloat}`);
       }
+    }
 
-      if (valorMax) {
-        const valorMaxFloat = parseFloat(valorMax);
-        if (!isNaN(valorMaxFloat)) {
-          query = query.lte('valor', valorMaxFloat);
-          console.log(`🔍 Filtro aplicado: valor <= ${valorMaxFloat}`);
-        }
+    if (valorMax) {
+      const valorMaxFloat = parseFloat(valorMax);
+      if (!isNaN(valorMaxFloat)) {
+        query = query.lte('valor', valorMaxFloat);
+        console.log(`🔍 Filtro aplicado: valor <= ${valorMaxFloat}`);
       }
-    } else {
-      console.log(`🔍 PULANDO filtros SQL de valor - será aplicado filtro absoluto pós-busca`);
     }
 
     if (tipo && (tipo === 'receita' || tipo === 'despesa')) {

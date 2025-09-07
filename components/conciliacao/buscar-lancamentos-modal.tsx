@@ -54,6 +54,7 @@ interface BuscarLancamentosModalProps {
   }) => void;
   bankTransaction?: any; // Transação bancária para comparação
   transacaoSelecionada?: any; // Manter compatibilidade
+  empresaId?: string; // ID da empresa para buscar contas bancárias
   filtrosIniciais?: {
     dataInicio?: string;
     dataFim?: string;
@@ -68,12 +69,13 @@ export default function BuscarLancamentosModal({
   onCreateSuggestion,
   bankTransaction,
   transacaoSelecionada,
+  empresaId,
   filtrosIniciais
 }: BuscarLancamentosModalProps) {
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [usageStatus, setUsageStatus] = useState<{[key: string]: {inUse: boolean, status?: string, color?: string}}>({});
+  const [usageStatus, setUsageStatus] = useState<{[key: string]: {inUse: boolean, status?: string, color?: string, starColor?: string}}>({});
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
@@ -92,15 +94,24 @@ export default function BuscarLancamentosModal({
   // Função para buscar contas bancárias
   const buscarContasBancarias = useCallback(async () => {
     try {
-      const response = await fetch('/api/contas-bancarias');
+      // ✅ CORREÇÃO: Incluir empresa_id obrigatório na chamada da API
+      if (!empresaId) {
+        console.warn('⚠️ empresaId não fornecido - não é possível buscar contas bancárias');
+        return;
+      }
+
+      const response = await fetch(`/api/contas-bancarias?empresa_id=${empresaId}`);
       if (response.ok) {
         const data = await response.json();
-        setContasBancarias(data.contas || []);
+        setContasBancarias(data || []); // Corrigir: API retorna array direto, não { contas: [] }
+        console.log('✅ Contas bancárias carregadas:', data?.length || 0);
+      } else {
+        console.error('❌ Erro na API de contas bancárias:', response.status, response.statusText);
       }
     } catch (error) {
-      console.error('Erro ao buscar contas bancárias:', error);
+      console.error('❌ Erro ao buscar contas bancárias:', error);
     }
-  }, []);
+  }, [empresaId]);
 
   // Função para obter nome da conta bancária
   const getNomeContaBancaria = (lancamento: Lancamento) => {
@@ -421,32 +432,63 @@ export default function BuscarLancamentosModal({
       const temFiltrosManuais = filtros.busca || filtros.dataInicio || filtros.dataFim || (filtros.contaBancariaId && filtros.contaBancariaId.length > 0);
       const deveAplicarFiltroInteligente = transactionData && !temFiltrosManuais && page === 1;
       
+      // 🔍 DEBUG DETALHADO: Por que o filtro inteligente não está sendo aplicado?
+      console.log('🔍 DEBUG: Verificando condições do filtro inteligente:', {
+        transactionData: !!transactionData,
+        transactionDataComplete: transactionData,
+        transactionAmount: transactionData?.amount || transactionData?.valor,
+        transactionDate: transactionData?.posted_at || transactionData?.data,
+        filtrosBusca: filtros.busca,
+        filtrosDataInicio: filtros.dataInicio,
+        filtrosDataFim: filtros.dataFim,
+        filtrosContaBancaria: filtros.contaBancariaId?.length || 0,
+        temFiltrosManuais,
+        page,
+        deveAplicarFiltroInteligente,
+        condicoes: {
+          temTransactionData: !!transactionData,
+          naoTemFiltrosManuais: !temFiltrosManuais,
+          ehPrimeiraPagina: page === 1,
+          todas: transactionData && !temFiltrosManuais && page === 1
+        }
+      });
+      
       if (deveAplicarFiltroInteligente) {
         console.log('🎯 Aplicando filtro inteligente baseado na transação');
         
-        // Filtro de valor com tolerância
+        // 🏦 INCLUIR TODAS AS CONTAS BANCÁRIAS COMO PADRÃO no filtro inteligente
+        if (contasBancarias && contasBancarias.length > 0) {
+          console.log('🏦 Aplicando filtro para TODAS as contas bancárias disponíveis');
+          contasBancarias.forEach(conta => {
+            params.append('contaBancariaId[]', conta.id);
+          });
+          console.log(`🏦 Total de contas incluídas: ${contasBancarias.length}`);
+        } else {
+          console.log('⚠️ Nenhuma conta bancária disponível - buscando em todas as contas');
+          // Não aplicar filtro de conta - permitir busca em todas
+        }
+        
+        // Filtro de valor EXATO da transação OFX (sem tolerância)
         const valorTransacao = Math.abs(parseFloat(transactionData.amount || transactionData.valor));
-        const tolerancia = filtrosIniciais?.toleranciaValor || 0.15;
         
-        const valorMin = valorTransacao * (1 - tolerancia);
-        const valorMax = valorTransacao * (1 + tolerancia);
-        
-        params.append('valorMin', valorMin.toFixed(2));
-        params.append('valorMax', valorMax.toFixed(2));
+        // Usar valor exato (sem tolerância)
+        params.append('valorMin', valorTransacao.toFixed(2));
+        params.append('valorMax', valorTransacao.toFixed(2));
         params.append('buscarValorAbsoluto', 'true');
         
-        // Aplicar status=pendente apenas no filtro inteligente
-        params.append('status', 'pendente');
+        // ✅ REMOVIDO: Não filtrar por status - buscar em todos os lançamentos
+        // params.append('status', 'pendente');
         
-        // Filtro de data - buscar em um intervalo ao redor da data da transação
+        // Filtro de data com tolerância de ±3 dias
         if (transactionData.posted_at || transactionData.data) {
           const dataTransacao = new Date(transactionData.posted_at || transactionData.data);
           const dataInicio = new Date(dataTransacao);
           const dataFim = new Date(dataTransacao);
           
-          // Intervalo de ±7 dias da transação
-          dataInicio.setDate(dataTransacao.getDate() - 7);
-          dataFim.setDate(dataTransacao.getDate() + 7);
+          // Tolerância de ±3 dias da transação
+          const toleranciaDias = 3;
+          dataInicio.setDate(dataTransacao.getDate() - toleranciaDias);
+          dataFim.setDate(dataTransacao.getDate() + toleranciaDias);
           
           params.append('dataInicio', dataInicio.toISOString().split('T')[0]);
           params.append('dataFim', dataFim.toISOString().split('T')[0]);
@@ -454,19 +496,33 @@ export default function BuscarLancamentosModal({
           console.log('📅 Filtro de data aplicado:', {
             dataTransacao: dataTransacao.toISOString().split('T')[0],
             dataInicio: dataInicio.toISOString().split('T')[0],
-            dataFim: dataFim.toISOString().split('T')[0]
+            dataFim: dataFim.toISOString().split('T')[0],
+            toleranciaDias: `±${toleranciaDias} dias`
           });
         }
         
-        console.log('💡 Filtro inteligente completo:', {
+        console.log('💡 Filtro inteligente com valor exato:', {
           valorTransacao,
-          valorMin: valorMin.toFixed(2),
-          valorMax: valorMax.toFixed(2),
-          tolerancia: `${(tolerancia * 100)}%`,
+          valorExato: valorTransacao.toFixed(2),
+          toleranciaValor: '0% (valor exato)',
+          toleranciaDias: '±3 dias',
+          contasBancarias: contasBancarias.length > 0 ? `${contasBancarias.length} contas incluídas` : 'todas as contas',
           buscarValorAbsoluto: true,
-          statusPendente: true
+          statusPendente: true,
+          observacao: 'Filtro com valor exato do OFX + intervalo de ±3 dias + todas as contas bancárias'
         });
       } else {
+        console.log('❌ FILTRO INTELIGENTE NÃO APLICADO - Usando busca geral:', {
+          motivo: !transactionData ? 'Sem dados da transação' : 
+                  temFiltrosManuais ? 'Filtros manuais aplicados' : 
+                  page !== 1 ? 'Não é a primeira página' : 'Motivo desconhecido',
+          filtrosManuaisDetalhes: {
+            busca: !!filtros.busca,
+            dataInicio: !!filtros.dataInicio,
+            dataFim: !!filtros.dataFim,
+            contaBancaria: filtros.contaBancariaId?.length > 0
+          }
+        });
         console.log('📋 Busca geral (sem filtro inteligente) - todos os lançamentos disponíveis');
         // Para busca geral, não aplicar status padrão - deixar que o usuário escolha
       }
@@ -509,29 +565,59 @@ export default function BuscarLancamentosModal({
       let usouFallback = false;
 
       if (transactionData && params.get('buscarValorAbsoluto') === 'true' && novosLancamentos.length === 0 && page === 1) {
-        console.log('🔄 FALLBACK 1: Filtro inteligente não encontrou resultados, buscando no intervalo de data...');
+        console.log('🔄 FALLBACK 1: Filtro exato não encontrou resultados, aplicando tolerância de ±5%...');
         
-        // Nova busca apenas com filtro de data (sem filtro de valor)
+        // Nova busca com pequena tolerância de valor (5%) para capturar pequenas diferenças
         const fallbackParams = new URLSearchParams();
         fallbackParams.append('page', '1');
         fallbackParams.append('limit', '20');
         fallbackParams.append('status', 'pendente');
         
-        // Manter apenas o filtro de data do filtro inteligente
+        // 🏦 INCLUIR TODAS AS CONTAS BANCÁRIAS no fallback também
+        if (contasBancarias && contasBancarias.length > 0) {
+          contasBancarias.forEach(conta => {
+            fallbackParams.append('contaBancariaId[]', conta.id);
+          });
+          console.log(`🏦 Fallback 1 - Incluindo ${contasBancarias.length} contas bancárias`);
+        }
+        
+        // Filtro de valor com tolerância mínima de 5%
+        const valorTransacao = Math.abs(parseFloat(transactionData.amount || transactionData.valor));
+        const toleranciaValorFallback1 = 0.05; // 5% no primeiro fallback
+        
+        const valorMinFallback1 = valorTransacao * (1 - toleranciaValorFallback1);
+        const valorMaxFallback1 = valorTransacao * (1 + toleranciaValorFallback1);
+        
+        fallbackParams.append('valorMin', valorMinFallback1.toFixed(2));
+        fallbackParams.append('valorMax', valorMaxFallback1.toFixed(2));
+        fallbackParams.append('buscarValorAbsoluto', 'true');
+        
+        // Manter filtro de data com ±3 dias
         if (transactionData.posted_at || transactionData.data) {
           const dataTransacao = new Date(transactionData.posted_at || transactionData.data);
           const dataInicio = new Date(dataTransacao);
           const dataFim = new Date(dataTransacao);
           
-          dataInicio.setDate(dataTransacao.getDate() - 7);
-          dataFim.setDate(dataTransacao.getDate() + 7);
+          const toleranciaDias = 3;
+          dataInicio.setDate(dataTransacao.getDate() - toleranciaDias);
+          dataFim.setDate(dataTransacao.getDate() + toleranciaDias);
           
           fallbackParams.append('dataInicio', dataInicio.toISOString().split('T')[0]);
           fallbackParams.append('dataFim', dataFim.toISOString().split('T')[0]);
+          
+          console.log('📅 Fallback 1 - Tolerância mínima:', {
+            valorTransacao,
+            valorMin: valorMinFallback1.toFixed(2),
+            valorMax: valorMaxFallback1.toFixed(2),
+            toleranciaValor: `±${(toleranciaValorFallback1 * 100)}%`,
+            toleranciaDias: `±${toleranciaDias} dias`,
+            dataInicio: dataInicio.toISOString().split('T')[0],
+            dataFim: dataFim.toISOString().split('T')[0]
+          });
         }
         
         const fallbackUrl = `/api/conciliacao/buscar-existentes?${fallbackParams.toString()}`;
-        console.log('🌐 URL do fallback 1:', fallbackUrl);
+        console.log('🌐 URL do fallback 1 (±5% valor):', fallbackUrl);
         
         const fallbackResponse = await fetch(fallbackUrl);
         if (fallbackResponse.ok) {
@@ -541,22 +627,64 @@ export default function BuscarLancamentosModal({
           hasMoreFinal = fallbackData.hasMore || false;
           usouFallback = true;
           
-          console.log('✅ Fallback 1 aplicado:', {
+          console.log('✅ Fallback 1 aplicado (±5% valor):', {
             lancamentos: novosLancamentos.length,
-            total: totalFinal
+            total: totalFinal,
+            toleranciaValor: '5%',
+            toleranciaDias: '3 dias'
           });
           
-          // 🔄 FALLBACK 2: Se ainda não encontrou, buscar TODOS os lançamentos (sem filtros)
+          // 🔄 FALLBACK 2: Se ainda não encontrou, aumentar tolerância para ±10%
           if (novosLancamentos.length === 0) {
-            console.log('🔄 FALLBACK 2: Ainda sem resultados, buscando TODOS os lançamentos...');
+            console.log('🔄 FALLBACK 2: Ainda sem resultados, aplicando tolerância de ±10%...');
             
             const fallback2Params = new URLSearchParams();
             fallback2Params.append('page', '1');
             fallback2Params.append('limit', '20');
-            // Não aplicar nenhum filtro - buscar todos
+            fallback2Params.append('status', 'pendente');
             
+            // 🏦 INCLUIR TODAS AS CONTAS BANCÁRIAS no fallback 2 também
+            if (contasBancarias && contasBancarias.length > 0) {
+              contasBancarias.forEach(conta => {
+                fallback2Params.append('contaBancariaId[]', conta.id);
+              });
+              console.log(`🏦 Fallback 2 - Incluindo ${contasBancarias.length} contas bancárias`);
+            }
+            
+            // Tolerância de 10% para valor
+            const toleranciaValorFallback2 = 0.10; // 10%
+            const valorMinFallback2 = valorTransacao * (1 - toleranciaValorFallback2);
+            const valorMaxFallback2 = valorTransacao * (1 + toleranciaValorFallback2);
+            
+            fallback2Params.append('valorMin', valorMinFallback2.toFixed(2));
+            fallback2Params.append('valorMax', valorMaxFallback2.toFixed(2));
+            fallback2Params.append('buscarValorAbsoluto', 'true');
+            
+            // Expandir também o filtro de data para ±7 dias
+            if (transactionData.posted_at || transactionData.data) {
+              const dataTransacao = new Date(transactionData.posted_at || transactionData.data);
+              const dataInicio = new Date(dataTransacao);
+              const dataFim = new Date(dataTransacao);
+              
+              const toleranciaDiasFallback2 = 7;
+              dataInicio.setDate(dataTransacao.getDate() - toleranciaDiasFallback2);
+              dataFim.setDate(dataTransacao.getDate() + toleranciaDiasFallback2);
+              
+              fallback2Params.append('dataInicio', dataInicio.toISOString().split('T')[0]);
+              fallback2Params.append('dataFim', dataFim.toISOString().split('T')[0]);
+              
+              console.log('📅 Fallback 2 - Tolerância expandida:', {
+                toleranciaValor: `±${(toleranciaValorFallback2 * 100)}%`,
+                toleranciaDias: `±${toleranciaDiasFallback2} dias`,
+                valorMin: valorMinFallback2.toFixed(2),
+                valorMax: valorMaxFallback2.toFixed(2),
+                dataInicio: dataInicio.toISOString().split('T')[0],
+                dataFim: dataFim.toISOString().split('T')[0]
+              });
+            }
+
             const fallback2Url = `/api/conciliacao/buscar-existentes?${fallback2Params.toString()}`;
-            console.log('🌐 URL do fallback 2:', fallback2Url);
+            console.log('🌐 URL do fallback 2 (±10% valor, ±7 dias):', fallback2Url);
             
             const fallback2Response = await fetch(fallback2Url);
             if (fallback2Response.ok) {
@@ -565,9 +693,11 @@ export default function BuscarLancamentosModal({
               totalFinal = fallback2Data.total || 0;
               hasMoreFinal = fallback2Data.hasMore || false;
               
-              console.log('✅ Fallback 2 aplicado - TODOS os lançamentos:', {
+              console.log('✅ Fallback 2 aplicado - Tolerância expandida:', {
                 lancamentos: novosLancamentos.length,
-                total: totalFinal
+                total: totalFinal,
+                toleranciaValor: '10%',
+                toleranciaDias: '7 dias'
               });
             }
           }
@@ -624,43 +754,72 @@ export default function BuscarLancamentosModal({
 
   // Função para verificar status de uso dos lançamentos
   const checkLancamentosUsage = useCallback(async (lancamentoIds: string[]) => {
-    console.log('🔍 Verificando status de uso para lançamentos:', lancamentoIds);
+    console.log('� Verificando uso dos lançamentos via API:', lancamentoIds);
     
-    const usagePromises = lancamentoIds.map(async (id) => {
+    for (const id of lancamentoIds) {
       try {
-        const response = await fetch(`/api/reconciliation/check-lancamento-usage/${id}`);
-        if (response.ok) {
-          const data = await response.json();
-          return { id, ...data };
+        console.log(`🔍 Verificando lançamento ${id}...`);
+        const response = await fetch(`/api/check-lancamento-usage/${id}`);
+        
+        if (!response.ok) {
+          console.error(`❌ Erro na API para ${id}:`, response.status, response.statusText);
+          continue;
+        }
+        
+        const result = await response.json();
+        console.log(`� Resultado da API para ${id}:`, result);
+        
+        if (result.inUse) {
+          // ✅ MESCLAR: Se a API confirma uso, manter/atualizar
+          console.log(`⭐ API confirmou que ${id} está em uso:`, result);
+          setUsageStatus(prev => ({
+            ...prev,
+            [id]: {
+              inUse: true,
+              starColor: result.starColor || 'yellow',
+              status: result.status || 'usado'
+            }
+          }));
         } else {
-          console.warn(`⚠️ Erro ao verificar uso do lançamento ${id}:`, response.status);
-          return { id, inUse: false };
+          // ⚠️ PRESERVAR: Se API diz que não está em uso, MAS nossa simulação diz que sim,
+          // preservar a simulação (pode ser um bug na API ou dados não sincronizados)
+          setUsageStatus(prev => {
+            if (prev[id]?.inUse) {
+              console.log(`� PRESERVANDO simulação para ${id} - API diz não usado mas simulação indica uso`);
+              return prev; // Manter simulação
+            } else {
+              console.log(`✅ API confirmou que ${id} não está em uso`);
+              return {
+                ...prev,
+                [id]: { inUse: false }
+              };
+            }
+          });
         }
       } catch (error) {
-        console.error(`❌ Erro ao verificar lançamento ${id}:`, error);
-        return { id, inUse: false };
+        console.error(`� Erro ao verificar lançamento ${id}:`, error);
+        // Em caso de erro, preservar simulação se existir
+        setUsageStatus(prev => {
+          if (prev[id]?.inUse) {
+            console.log(`�️ ERRO na API para ${id}, mantendo simulação`);
+            return prev;
+          }
+          return prev;
+        });
       }
-    });
-
-    const results = await Promise.all(usagePromises);
-    const newUsageStatus: {[key: string]: {inUse: boolean, status?: string, color?: string}} = {};
-    
-    results.forEach(result => {
-      newUsageStatus[result.id] = {
-        inUse: result.inUse,
-        status: result.status,
-        color: result.color
-      };
-    });
-
-    console.log('📊 Status de uso verificado:', newUsageStatus);
-    setUsageStatus(newUsageStatus);
+    }
   }, []);
 
   // Verificar status de uso quando lançamentos são carregados
   useEffect(() => {
     if (lancamentos.length > 0) {
       const lancamentoIds = lancamentos.map(l => l.id);
+      console.log('🔍 Iniciando verificação de uso para lançamentos:', lancamentoIds);
+      
+      // ⚠️ CORREÇÃO: Remover simulação excessiva - usar apenas dados reais
+      console.log('✅ CORREÇÃO: Verificação será feita apenas via API real - sem simulação fake');
+      
+      // Executar verificação real via API
       checkLancamentosUsage(lancamentoIds);
     }
   }, [lancamentos, checkLancamentosUsage]);
@@ -1029,6 +1188,33 @@ export default function BuscarLancamentosModal({
           </div>
         )}
 
+        {/* ✅ NOVA SEÇÃO: Legenda das estrelas */}
+        <div className="flex-shrink-0 bg-gray-50 border border-gray-200 rounded-lg p-3 mb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-1">
+              <span className="text-xs font-medium text-gray-600">Legenda:</span>
+            </div>
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center space-x-1">
+                <Star className="h-3 w-3 text-green-500 fill-green-500" />
+                <span className="text-xs text-gray-600">Conciliado</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <Star className="h-3 w-3 text-blue-500 fill-blue-500" />
+                <span className="text-xs text-gray-600">Transferência</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <Star className="h-3 w-3 text-orange-500 fill-orange-500" />
+                <span className="text-xs text-gray-600">Sugestão</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                <span className="text-xs text-gray-600">Em uso</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
 
           {/* Linha de informações e controles */}
           <div className="flex justify-between items-center pt-2">
@@ -1241,37 +1427,52 @@ export default function BuscarLancamentosModal({
                             />
                           </TableCell>
                           <TableCell className="text-center">
-                            {/* Sistema de estrelas com cores baseado no status de uso */}
+                            {/* ✅ SISTEMA DE ESTRELAS MELHORADO: Indicador visual de uso de lançamentos */}
                             {(() => {
                               const usage = usageStatus[lancamento.id];
                               const isSelected = selectedLancamentos.some(sel => sel.id === lancamento.id);
                               
+                              console.log(`🔍 Renderizando coluna Primário para ${lancamento.id}:`, {
+                                hasUsage: !!usage,
+                                usage: usage,
+                                isSelected,
+                                usageInUse: usage?.inUse
+                              });
+                              
                               // Se o lançamento está em uso, mostrar estrela colorida baseada no status
                               if (usage?.inUse) {
+                                console.log(`⭐ Renderizando estrela para lançamento ${lancamento.id}:`, {
+                                  starColor: usage.starColor,
+                                  status: usage.status,
+                                  color: usage.color
+                                });
+                                
                                 let starColor = '';
                                 let fillColor = '';
                                 let title = '';
                                 
-                                switch (usage.color) {
-                                  case 'orange':
-                                    starColor = 'text-orange-500';
-                                    fillColor = 'fill-orange-500';
-                                    title = 'Lançamento em uso - Status: Sugestão';
-                                    break;
+                                // ✅ MAPEAMENTO MELHORADO: Baseado no starColor da API
+                                switch (usage.starColor) {
                                   case 'green':
                                     starColor = 'text-green-500';
                                     fillColor = 'fill-green-500';
-                                    title = 'Lançamento em uso - Status: Conciliado';
+                                    title = 'Lançamento já conciliado ✅';
                                     break;
                                   case 'blue':
                                     starColor = 'text-blue-500';
                                     fillColor = 'fill-blue-500';
-                                    title = 'Lançamento em uso - Status: Transferência';
+                                    title = 'Lançamento usado em transferência 🔄';
+                                    break;
+                                  case 'orange':
+                                    starColor = 'text-orange-500';
+                                    fillColor = 'fill-orange-500';
+                                    title = 'Lançamento com sugestão pendente ⏳';
                                     break;
                                   default:
-                                    starColor = 'text-gray-400';
-                                    fillColor = 'fill-gray-400';
-                                    title = 'Lançamento em uso';
+                                    // ✅ FALLBACK: Estrela amarela para qualquer uso não identificado
+                                    starColor = 'text-yellow-500';
+                                    fillColor = 'fill-yellow-500';
+                                    title = 'Lançamento em uso - não selecione novamente ⚠️';
                                 }
                                 
                                 return (
