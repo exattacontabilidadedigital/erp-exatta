@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Calendar, Search, Filter, X, CheckCircle, AlertCircle, RefreshCw, AlertTriangle, Edit, RotateCcw, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Star } from 'lucide-react';
+import { Calendar, Search, Filter, X, CheckCircle, AlertCircle, RefreshCw, AlertTriangle, Edit, RotateCcw, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Star, Eye } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import EditLancamentoModal from './edit-lancamento-modal';
 import { ContaBancariaSelect } from '@/components/ui/conta-bancaria-select';
 
@@ -1328,9 +1329,128 @@ export default function BuscarLancamentosModal({
                 }`}>
                   {formatarMoeda(calculateSelectedTotal())}
                 </span>
-                <span className="text-xs text-gray-500">
-                  {selectedLancamentos.length} {selectedLancamentos.length === 1 ? 'lançamento' : 'lançamentos'}
-                </span>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="text-xs text-gray-500 cursor-help hover:text-blue-600 hover:underline transition-colors flex items-center gap-1">
+                        {selectedLancamentos.length === 0 && '0 lançamentos'}
+                        {selectedLancamentos.length === 1 && '1 lançamento selecionado'}
+                        {selectedLancamentos.length > 1 && `${selectedLancamentos.length} lançamentos selecionados`}
+                        <Eye className="h-4 w-4 ml-1 text-blue-500" />
+                      </span>
+                    </TooltipTrigger>
+                    {selectedLancamentos.length > 0 && (
+                      <TooltipContent side="bottom" className="p-0 max-w-md">
+                        <div className="bg-white border border-gray-200 rounded-lg shadow-lg">
+                          <div className="bg-gray-50 px-3 py-2 border-b rounded-t-lg">
+                            <h4 className="font-medium text-sm text-gray-700">
+                              Lançamentos Selecionados ({selectedLancamentos.length})
+                            </h4>
+                          </div>
+                          <div className="p-3 space-y-2 max-h-60 overflow-y-auto">
+                            {selectedLancamentos.map((lancamento, index) => (
+                              <div 
+                                key={lancamento.id} 
+                                className={`flex items-center justify-between p-2 rounded border-l-4 transition-colors ${
+                                  primaryLancamentoId === lancamento.id
+                                    ? 'border-l-yellow-400 bg-yellow-50'
+                                    : 'border-l-gray-300 bg-gray-50'
+                                }`}
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    {primaryLancamentoId === lancamento.id && (
+                                      <div title="Lançamento primário">
+                                        <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                                      </div>
+                                    )}
+                                    <span className="text-xs font-medium text-gray-600">
+                                      {formatarData(lancamento.data_lancamento)}
+                                    </span>
+                                    {lancamento.numero_documento && (
+                                      <span className="text-xs text-gray-500 truncate max-w-20" title={lancamento.numero_documento}>
+                                        #{lancamento.numero_documento}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-sm text-gray-700 truncate" title={lancamento.descricao}>
+                                    {lancamento.descricao || 'Sem descrição'}
+                                  </p>
+                                  {lancamento.plano_contas?.nome && (
+                                    <p className="text-xs text-gray-500 truncate" title={lancamento.plano_contas.nome}>
+                                      {lancamento.plano_contas.nome}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex-shrink-0 text-right ml-3">
+                                  <span className={`font-medium text-sm ${
+                                    // Usar a mesma lógica de cores da tabela
+                                    (() => {
+                                      const isTransferencia = lancamento.tipo === 'transferencia' || 
+                                                             lancamento.numero_documento?.includes('TRANSF-') ||
+                                                             lancamento.descricao?.includes('TRANSFERÊNCIA');
+                                      
+                                      if (isTransferencia) {
+                                        const isEntrada = lancamento.numero_documento?.includes('-ENTRADA');
+                                        const isSaida = lancamento.numero_documento?.includes('-SAIDA');
+                                        
+                                        if (isEntrada) {
+                                          return 'text-green-700';
+                                        } else if (isSaida) {
+                                          return 'text-red-700';
+                                        } else {
+                                          return lancamento.valor > 0 ? 'text-green-700' : 'text-red-700';
+                                        }
+                                      } else if (validateMatch(lancamento).valueMatch) {
+                                        return 'text-green-600';
+                                      } else if (lancamento.tipo === 'receita') {
+                                        return 'text-green-700';
+                                      } else {
+                                        return 'text-red-700';
+                                      }
+                                    })()
+                                  }`}>
+                                    {formatarMoeda(Math.abs(lancamento.valor))}
+                                  </span>
+                                  <div className="text-xs text-gray-500">
+                                    {lancamento.tipo === 'receita' ? 'Receita' : 
+                                     lancamento.tipo === 'despesa' ? 'Despesa' : 
+                                     lancamento.tipo === 'transferencia' ? 'Transferência' : 
+                                     'Outro'}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                            
+                            {/* Linha de total */}
+                            {selectedLancamentos.length > 1 && (
+                              <div className="border-t pt-2 mt-2">
+                                <div className="flex justify-between items-center font-medium">
+                                  <span className="text-sm text-gray-700">Total Selecionado:</span>
+                                  <span className="text-sm text-green-600">
+                                    {formatarMoeda(calculateSelectedTotal())}
+                                  </span>
+                                </div>
+                                {transactionData && (
+                                  <div className="flex justify-between items-center text-xs text-gray-500 mt-1">
+                                    <span>Diferença:</span>
+                                    <span className={`font-medium ${
+                                      isExactMatch() ? 'text-green-600' : 
+                                      isSelectedTotalCompatible() ? 'text-yellow-600' : 
+                                      'text-red-600'
+                                    }`}>
+                                      {formatarMoeda(Math.abs(calculateSelectedTotal() - Math.abs(parseFloat(transactionData.amount || transactionData.valor || '0'))))}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
               </div>
               
               <div className="flex flex-col items-center">

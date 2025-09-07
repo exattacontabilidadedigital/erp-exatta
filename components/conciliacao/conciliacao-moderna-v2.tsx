@@ -29,11 +29,13 @@ import {
   TrendingDown,
   FileText,
   Calendar,
-  Banknote
+  Banknote,
+  Eye
 } from "lucide-react";
 import { useToast } from "@/contexts/toast-context";
 import { useAuth } from "@/contexts/auth-context";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { LancamentosForm } from "@/components/lancamentos/lancamentos-form";
 import { MatchingEngine } from "@/lib/matching-engine";
 import BuscarLancamentosModalComponent from './buscar-lancamentos-modal';
@@ -3977,9 +3979,87 @@ function ReconciliationCard({
                 {formatCurrency(pair.systemTransaction.valor)}
               </div>
               <div className="space-y-1">
-                <p className="text-sm text-gray-700">
-                  {pair.systemTransaction.descricao || 'Sem descrição'}
-                </p>
+                {/* Descrição com tooltip para múltiplos lançamentos */}
+                {pair.systemTransaction.descricao && pair.systemTransaction.descricao.includes('lançamentos selecionados') ? (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <p className="text-sm text-gray-700 cursor-help hover:text-blue-600 hover:underline transition-colors flex items-center gap-1">
+                          {pair.systemTransaction.descricao}
+                          <Eye className="h-3 w-3 text-blue-500" />
+                        </p>
+                      </TooltipTrigger>
+                      {pair.systemTransactions && pair.systemTransactions.length > 0 && (
+                        <TooltipContent side="bottom" className="p-0 max-w-md">
+                          <div className="bg-white border border-gray-200 rounded-lg shadow-lg">
+                            <div className="bg-gray-50 px-3 py-2 border-b rounded-t-lg">
+                              <h4 className="font-medium text-sm text-gray-700">
+                                Lançamentos Selecionados ({pair.systemTransactions.length})
+                              </h4>
+                            </div>
+                            <div className="p-3 space-y-2 max-h-60 overflow-y-auto">
+                              {pair.systemTransactions.map((lancamento, index) => (
+                                <div 
+                                  key={lancamento.id} 
+                                  className="flex items-center justify-between p-2 rounded border-l-4 border-l-gray-300 bg-gray-50"
+                                >
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-xs font-medium text-gray-600">
+                                        {formatDate(lancamento.data_lancamento)}
+                                      </span>
+                                      {lancamento.numero_documento && (
+                                        <span className="text-xs text-gray-500 truncate max-w-20" title={lancamento.numero_documento}>
+                                          #{lancamento.numero_documento}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-sm text-gray-700 truncate" title={lancamento.descricao}>
+                                      {lancamento.descricao || 'Sem descrição'}
+                                    </p>
+                                    {lancamento.plano_conta && (
+                                      <p className="text-xs text-gray-500 truncate" title={lancamento.plano_conta}>
+                                        {lancamento.plano_conta}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div className="flex-shrink-0 text-right ml-3">
+                                    <span className={`font-medium text-sm ${
+                                      lancamento.tipo === 'receita' ? 'text-green-700' : 'text-red-700'
+                                    }`}>
+                                      {formatCurrency(Math.abs(lancamento.valor))}
+                                    </span>
+                                    <div className="text-xs text-gray-500">
+                                      {lancamento.tipo === 'receita' ? 'Receita' : 
+                                       lancamento.tipo === 'despesa' ? 'Despesa' : 
+                                       'Outro'}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                              
+                              {/* Linha de total */}
+                              {pair.systemTransactions.length > 1 && (
+                                <div className="border-t pt-2 mt-2">
+                                  <div className="flex justify-between items-center font-medium">
+                                    <span className="text-sm text-gray-700">Total:</span>
+                                    <span className="text-sm text-green-600">
+                                      {formatCurrency(pair.systemTransactions.reduce((total, tx) => total + Math.abs(tx.valor), 0))}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : (
+                  <p className="text-sm text-gray-700">
+                    {pair.systemTransaction.descricao || 'Sem descrição'}
+                  </p>
+                )}
                 <div className="flex items-center gap-2">
                   <p className="text-xs text-gray-500">Origem: sistema</p>
                   
