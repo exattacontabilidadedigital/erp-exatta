@@ -1369,13 +1369,10 @@ export default function BuscarLancamentosModal({
                         />
                       </TableHead>
                       <TableHead className="w-16 text-center font-medium">Primário</TableHead>
-                      <TableHead className="w-24 font-medium">Data</TableHead>
-                      <TableHead className="font-medium min-w-0">Descrição</TableHead>
-                      <TableHead className="w-28 text-right font-medium">Valor</TableHead>
-                      <TableHead className="w-40 text-center font-medium">Conta Bancária</TableHead>
-                      <TableHead className="w-24 text-center font-medium">Status</TableHead>
-                      <TableHead className="w-40 font-medium">Plano de Contas</TableHead>
                       <TableHead className="w-32 font-medium">Documento</TableHead>
+                      <TableHead className="font-medium min-w-0">Descrição</TableHead>
+                      <TableHead className="w-40 font-medium">Plano de Contas</TableHead>
+                      <TableHead className="w-28 text-right font-medium">Valor</TableHead>
                       <TableHead className="w-20 text-center font-medium">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1505,52 +1502,40 @@ export default function BuscarLancamentosModal({
                               return null;
                             })()}
                           </TableCell>
-                          <TableCell className="text-sm">
-                            <span className={`${validation.dateMatch ? 'text-green-600' : 'text-gray-700'}`}>
-                              {/* ✅ Campo: data_lancamento da tabela lancamentos */}
-                              {formatarData(lancamento.data_lancamento)}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-sm min-w-0">
-                            <div className="truncate" title={lancamento.descricao}>
-                              {/* ✅ Campo: descricao da tabela lancamentos */}
-                              {lancamento.descricao || 'Sem descrição'}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-sm font-medium text-right">
-                            <span className={`${validation.valueMatch ? 'text-green-600' : (lancamento.valor >= 0 ? 'text-green-700' : 'text-red-700')}`}>
-                              {/* ✅ Campo: valor da tabela lancamentos */}
-                              R$ {formatarMoeda(lancamento.valor)}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-center text-sm">
-                            <div className="truncate max-w-40" title={getNomeContaBancaria(lancamento)}>
-                              {/* ✅ Campo: conta_bancaria_id da tabela lancamentos */}
-                              {getNomeContaBancaria(lancamento)}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-center text-sm">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              lancamento.status === 'pendente' 
-                                ? 'bg-yellow-100 text-yellow-800' 
-                                : 'bg-gray-100 text-gray-800'
-                            }`}>
-                              {/* ✅ Campo: status da tabela lancamentos */}
-                              {lancamento.status || 'pendente'}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            <div className="truncate" title={lancamento.plano_contas?.nome}>
-                              {/* ✅ Campo: plano_contas.nome via JOIN da tabela lancamentos */}
-                              {lancamento.plano_contas?.nome || '-'}
-                            </div>
-                          </TableCell>
+                          
+                          {/* 3. Documento */}
                           <TableCell className="text-sm">
                             <div className="truncate" title={lancamento.numero_documento}>
                               {/* ✅ Campo: numero_documento da tabela lancamentos */}
                               {lancamento.numero_documento || '-'}
                             </div>
                           </TableCell>
+                          
+                          {/* 4. Descrição */}
+                          <TableCell className="text-sm min-w-0">
+                            <div className="truncate" title={lancamento.descricao}>
+                              {/* ✅ Campo: descricao da tabela lancamentos */}
+                              {lancamento.descricao || 'Sem descrição'}
+                            </div>
+                          </TableCell>
+                          
+                          {/* 5. Plano de Contas */}
+                          <TableCell className="text-sm">
+                            <div className="truncate" title={lancamento.plano_contas?.nome}>
+                              {/* ✅ Campo: plano_contas.nome via JOIN da tabela lancamentos */}
+                              {lancamento.plano_contas?.nome || '-'}
+                            </div>
+                          </TableCell>
+                          
+                          {/* 6. Valor */}
+                          <TableCell className="text-sm font-medium text-right">
+                            <span className={`${validation.valueMatch ? 'text-green-600' : (lancamento.valor >= 0 ? 'text-green-700' : 'text-red-700')}`}>
+                              {/* ✅ Campo: valor da tabela lancamentos */}
+                              R$ {formatarMoeda(lancamento.valor)}
+                            </span>
+                          </TableCell>
+                          
+                          {/* 7. Ações */}
                           <TableCell className="text-center">
                             <div className="flex items-center justify-center gap-1">
                               <Button
