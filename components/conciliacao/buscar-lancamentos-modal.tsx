@@ -250,6 +250,55 @@ export default function BuscarLancamentosModal({
     
     return difference === 0; // Exige diferença EXATAMENTE zero
   };
+
+  // ✅ NOVA FUNÇÃO: Verificar se botão deve estar disponível (lógica de segurança)
+  const isSuggestionButtonEnabled = () => {
+    if (selectedLancamentos.length === 0) return false;
+    
+    // Para match exato (diferença = 0), sempre permitir conciliação automática
+    if (isExactMatch()) return true;
+    
+    // Para diferenças pequenas (< R$ 0,01), permitir sugestão
+    if (isSelectedTotalCompatible()) return true;
+    
+    // Para diferenças grandes (como R$ 140,00 no exemplo), BLOQUEAR
+    // Isso evita que o usuário faça conciliações incorretas
+    return false;
+  };
+
+  // ✅ NOVA FUNÇÃO: Obter texto do botão baseado no estado
+  const getSuggestionButtonText = () => {
+    if (selectedLancamentos.length === 0) return 'Selecione Lançamentos';
+    
+    if (selectedLancamentos.length === 1 && isExactMatch()) {
+      return 'Conciliar Automaticamente';
+    }
+    
+    if (isSelectedTotalCompatible()) {
+      return 'Criar Sugestão (Divergência Pequena)';
+    }
+    
+    // Para diferenças grandes, mostrar mensagem de bloqueio
+    return 'Diferença Muito Grande - Verifique Seleção';
+  };
+
+  // ✅ NOVA FUNÇÃO: Obter cor do botão baseado no estado
+  const getSuggestionButtonStyle = () => {
+    if (selectedLancamentos.length === 0) {
+      return 'bg-gray-300 text-gray-500 cursor-not-allowed';
+    }
+    
+    if (selectedLancamentos.length === 1 && isExactMatch()) {
+      return 'bg-green-600 text-white hover:bg-green-700'; // Verde para match exato
+    }
+    
+    if (isSelectedTotalCompatible()) {
+      return 'bg-yellow-500 text-white hover:bg-yellow-600'; // Amarelo para divergência pequena
+    }
+    
+    // Para diferenças grandes, botão vermelho indicando erro
+    return 'bg-red-500 text-white cursor-not-allowed'; // Vermelho para diferença muito grande
+  };
   
   // Função para lidar com seleção de lançamento
   const handleSelectLancamento = (lancamento: Lancamento) => {
@@ -293,6 +342,13 @@ export default function BuscarLancamentosModal({
   
   // ✅ FUNÇÃO REVISADA: Criar sugestão com validações e feedback melhorados
   const handleCreateSuggestion = async () => {
+    // ✅ NOVA VALIDAÇÃO: Verificar se botão deveria estar habilitado
+    if (!isSuggestionButtonEnabled()) {
+      console.warn('⚠️ Tentativa de criar sugestão com diferença muito grande bloqueada por segurança');
+      alert('❌ Não é possível criar sugestão: a diferença entre os valores é muito grande.\n\nVerifique se os lançamentos selecionados estão corretos ou se há algum erro na seleção.');
+      return;
+    }
+
     // Validação inicial
     if (selectedLancamentos.length === 0) {
       console.warn('⚠️ Nenhum lançamento selecionado');
@@ -1831,26 +1887,11 @@ export default function BuscarLancamentosModal({
             
             <Button 
               onClick={handleCreateSuggestion}
-              disabled={selectedLancamentos.length === 0}
-              className={`px-6 transition-all duration-200 ${
-                selectedLancamentos.length === 0 
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                  : selectedLancamentos.length === 1 && isExactMatch()
-                    ? 'bg-green-600 text-white hover:bg-green-700' // Verde para match exato
-                    : isSelectedTotalCompatible() 
-                      ? 'bg-yellow-500 text-white hover:bg-yellow-600' // Amarelo para divergência pequena
-                      : 'bg-blue-600 text-white hover:bg-blue-700' // Azul para sugestão normal
-              }`}
+              disabled={!isSuggestionButtonEnabled()}
+              className={`px-6 transition-all duration-200 ${getSuggestionButtonStyle()}`}
             >
               <CheckCircle className="h-4 w-4 mr-2" />
-              {selectedLancamentos.length === 0 
-                ? 'Selecione Lançamentos'
-                : selectedLancamentos.length === 1 && isExactMatch()
-                  ? 'Conciliar Automaticamente'
-                  : selectedLancamentos.length === 1 && isSelectedTotalCompatible()
-                    ? 'Criar Sugestão (Divergência Pequena)'
-                    : 'Criar Sugestão'
-              }
+              {getSuggestionButtonText()}
             </Button>
           </div>
         </div>
