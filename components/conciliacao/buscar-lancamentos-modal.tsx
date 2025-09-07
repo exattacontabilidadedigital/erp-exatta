@@ -14,7 +14,7 @@ interface Lancamento {
   data_lancamento: string;
   descricao: string;
   valor: number;
-  tipo: 'receita' | 'despesa';
+  tipo: 'receita' | 'despesa' | 'transferencia'; // ✅ ADICIONAR: tipo transferencia
   status: string;
   numero_documento?: string;
   conta_bancaria_id?: string;
@@ -40,6 +40,7 @@ interface BuscarLancamentosModalProps {
   onClose: () => void;
   onCreateSuggestion?: (suggestionData: {
     selectedLancamentos: Lancamento[];
+    primaryLancamento?: Lancamento; // ✅ NOVO: Lançamento principal com valores agregados
     primaryLancamentoId?: string | null; // 🎯 Novo campo para lançamento primário
     isValidMatch: boolean;
     totalValue: number;
@@ -251,25 +252,40 @@ export default function BuscarLancamentosModal({
     return difference === 0; // Exige diferença EXATAMENTE zero
   };
 
-  // ✅ NOVA FUNÇÃO: Verificar se botão deve estar disponível (lógica de segurança)
+  // ✅ FUNÇÃO ATUALIZADA: Verificar se botão deve estar disponível (agora suporta múltiplos)
   const isSuggestionButtonEnabled = () => {
     if (selectedLancamentos.length === 0) return false;
     
-    // Para match exato (diferença = 0), sempre permitir conciliação automática
-    if (isExactMatch()) return true;
+    // ✅ NOVO: Para múltiplos lançamentos, verificar se a soma bate
+    if (selectedLancamentos.length > 1) {
+      // Para múltiplos, só permitir se a soma for exata ou muito próxima
+      return isExactMatch() || isSelectedTotalCompatible();
+    }
     
-    // Para diferenças pequenas (< R$ 0,01), permitir sugestão
+    // Para lançamento único - lógica original
+    if (isExactMatch()) return true;
     if (isSelectedTotalCompatible()) return true;
     
-    // Para diferenças grandes (como R$ 140,00 no exemplo), BLOQUEAR
-    // Isso evita que o usuário faça conciliações incorretas
+    // Para diferenças grandes, BLOQUEAR
     return false;
   };
 
-  // ✅ NOVA FUNÇÃO: Obter texto do botão baseado no estado
+  // ✅ FUNÇÃO ATUALIZADA: Obter texto do botão baseado no estado (agora suporta múltiplos)
   const getSuggestionButtonText = () => {
     if (selectedLancamentos.length === 0) return 'Selecione Lançamentos';
     
+    // ✅ NOVO: Para múltiplos lançamentos
+    if (selectedLancamentos.length > 1) {
+      if (isExactMatch()) {
+        return `Conciliar ${selectedLancamentos.length} Lançamentos (Match Exato)`;
+      }
+      if (isSelectedTotalCompatible()) {
+        return `Criar Sugestão com ${selectedLancamentos.length} Lançamentos`;
+      }
+      return 'Diferença Muito Grande - Verifique Seleção';
+    }
+    
+    // Para lançamento único - lógica original
     if (selectedLancamentos.length === 1 && isExactMatch()) {
       return 'Conciliar Automaticamente';
     }
@@ -278,16 +294,65 @@ export default function BuscarLancamentosModal({
       return 'Criar Sugestão (Divergência Pequena)';
     }
     
-    // Para diferenças grandes, mostrar mensagem de bloqueio
     return 'Diferença Muito Grande - Verifique Seleção';
   };
 
-  // ✅ NOVA FUNÇÃO: Obter cor do botão baseado no estado
+  // ✅ NOVA FUNÇÃO: Calcular data ideal para múltiplos lançamentos
+  const calculateOptimalDate = () => {
+    if (selectedLancamentos.length === 0) return null;
+    if (selectedLancamentos.length === 1) return selectedLancamentos[0].data_lancamento;
+    
+    if (!transactionData) return selectedLancamentos[0].data_lancamento;
+    
+    // Data da transação OFX para comparação
+    const ofxDate = formatDateForComparison(transactionData.posted_at || transactionData.data);
+    
+    // Procurar lançamento com data igual à data OFX
+    const matchingDateLancamento = selectedLancamentos.find(l => 
+      formatDateForComparison(l.data_lancamento) === ofxDate
+    );
+    
+    if (matchingDateLancamento) {
+      console.log('📅 Data escolhida: usando lançamento com data igual ao OFX:', {
+        dataOFX: ofxDate,
+        dataEscolhida: matchingDateLancamento.data_lancamento,
+        lancamentoId: matchingDateLancamento.id
+      });
+      return matchingDateLancamento.data_lancamento;
+    }
+    
+    // Se não há data igual, usar a mais recente
+    const sortedByDate = selectedLancamentos.sort((a, b) => 
+      new Date(b.data_lancamento).getTime() - new Date(a.data_lancamento).getTime()
+    );
+    
+    console.log('📅 Data escolhida: usando data mais recente dos selecionados:', {
+      dataOFX: ofxDate,
+      dataEscolhida: sortedByDate[0].data_lancamento,
+      todasAsDatas: selectedLancamentos.map(l => ({ id: l.id, data: l.data_lancamento }))
+    });
+    
+    return sortedByDate[0].data_lancamento;
+  };
+
+  // ✅ FUNÇÃO ATUALIZADA: Obter cor do botão baseado no estado (agora distingue múltiplos)
   const getSuggestionButtonStyle = () => {
     if (selectedLancamentos.length === 0) {
       return 'bg-gray-300 text-gray-500 cursor-not-allowed';
     }
     
+    // ✅ NOVO: Para múltiplos lançamentos, usar cores específicas
+    if (selectedLancamentos.length > 1) {
+      if (isExactMatch()) {
+        return 'bg-blue-600 text-white hover:bg-blue-700'; // Azul para múltiplos com match exato
+      }
+      if (isSelectedTotalCompatible()) {
+        return 'bg-amber-500 text-white hover:bg-amber-600'; // Âmbar para múltiplos compatíveis
+      }
+      return 'bg-red-500 text-white cursor-not-allowed'; // Vermelho para incompatível
+    }
+    
+    // Para lançamento único
     if (selectedLancamentos.length === 1 && isExactMatch()) {
       return 'bg-green-600 text-white hover:bg-green-700'; // Verde para match exato
     }
@@ -374,21 +439,40 @@ export default function BuscarLancamentosModal({
     });
 
     try {
-      // Calcular valores e validações
+      // ✅ ATUALIZADO: Calcular valores e data otimizada para múltiplos lançamentos
       const totalValue = calculateSelectedTotal();
-      const primaryLancamento = selectedLancamentos[0];
+      const optimalDate = calculateOptimalDate(); // Nova função para escolher melhor data
+      
+      // Para múltiplos lançamentos, usar dados agregados
+      const primaryLancamento = selectedLancamentos.length === 1 
+        ? selectedLancamentos[0] 
+        : {
+            ...selectedLancamentos[0], // Base no primeiro lançamento
+            valor: totalValue, // ✅ NOVO: Usar soma dos valores
+            data_lancamento: optimalDate || selectedLancamentos[0].data_lancamento, // ✅ NOVO: Usar data otimizada
+            descricao: `Múltiplos lançamentos (${selectedLancamentos.length} itens)` // ✅ NOVO: Descrição especial
+          };
+      
       const validation = validateMatch(primaryLancamento);
+      
+      console.log('🔧 Lançamento principal criado:', {
+        isMultiple: selectedLancamentos.length > 1,
+        originalValue: selectedLancamentos[0]?.valor,
+        aggregatedValue: primaryLancamento.valor,
+        optimalDate,
+        description: primaryLancamento.descricao
+      });
       
       // Verificar compatibilidade de valores
       const isValueCompatible = isSelectedTotalCompatible();
-      const isExactMatchValue = isExactMatch(); // ✅ NOVA VERIFICAÇÃO: Match exato
+      const isExactMatchValue = isExactMatch();
       const hasDiscrepancy = selectedLancamentos.length > 1 || !validation.isValid || !isExactMatchValue;
       
       // Determinar tipo de match
       let matchType: 'exact_match' | 'manual' | 'multiple_transactions' = 'manual';
       let confidenceLevel: 'high' | 'medium' | 'low' = 'medium';
       
-      // ✅ NOVA LÓGICA: Só considera exact_match se tiver diferença ZERO
+      // ✅ ATUALIZADA: Lógica melhorada para múltiplos lançamentos
       if (selectedLancamentos.length === 1 && validation.isValid && isExactMatchValue) {
         matchType = 'exact_match';
         confidenceLevel = 'high';
@@ -398,7 +482,14 @@ export default function BuscarLancamentosModal({
         confidenceLevel = 'medium';
       } else if (selectedLancamentos.length > 1) {
         matchType = 'multiple_transactions';
-        confidenceLevel = isValueCompatible ? 'medium' : 'low';
+        // ✅ NOVO: Para múltiplos, usar confiança alta se match exato, média se compatível
+        if (isExactMatchValue) {
+          confidenceLevel = 'high'; // Match exato com múltiplos = alta confiança
+        } else if (isValueCompatible) {
+          confidenceLevel = 'medium'; // Compatível mas não exato = média confiança
+        } else {
+          confidenceLevel = 'low'; // Incompatível = baixa confiança
+        }
       }
 
       console.log('📊 Análise da seleção:', {
@@ -420,6 +511,7 @@ export default function BuscarLancamentosModal({
       // Dados para enviar à API via função existente do componente pai
       const suggestionData = {
         selectedLancamentos,
+        primaryLancamento, // ✅ NOVO: Incluir lançamento principal com valor agregado
         primaryLancamentoId, // 🎯 Incluir ID do lançamento primário
         isValidMatch: validation.isValid && selectedLancamentos.length === 1 && isExactMatchValue, // ✅ MUDANÇA: Só é válido com diferença zero
         totalValue,
@@ -445,7 +537,11 @@ export default function BuscarLancamentosModal({
         useExistingHandling: true
       };
 
-      console.log('📤 Enviando dados para o componente pai:', suggestionData);
+      console.log('📤 Dados enviados:', {
+        totalLancamentos: selectedLancamentos.length,
+        valorTotal: `R$ ${totalValue.toFixed(2)}`,
+        primaryLancamentoValor: `R$ ${primaryLancamento.valor.toFixed(2)}`
+      });
 
       // Chamar callback do componente pai
       if (onCreateSuggestion) {
@@ -1668,10 +1764,75 @@ export default function BuscarLancamentosModal({
                             </div>
                           </TableCell>
                           <TableCell className="text-sm font-medium text-right">
-                            <span className={`${validation.valueMatch ? 'text-green-600' : (lancamento.valor >= 0 ? 'text-green-700' : 'text-red-700')}`}>
-                              {/* ✅ Campo: valor da tabela lancamentos */}
-                              R$ {formatarMoeda(lancamento.valor)}
-                            </span>
+                            {(() => {
+                              // 🔍 DEBUG: Adicionar logs para identificar o problema
+                              console.log('🔍 DEBUG - Lançamento ID:', lancamento.id);
+                              console.log('🔍 DEBUG - Tipo:', lancamento.tipo);
+                              console.log('🔍 DEBUG - Valor:', lancamento.valor);
+                              console.log('🔍 DEBUG - Número Doc:', lancamento.numero_documento);
+                              console.log('🔍 DEBUG - Descrição:', lancamento.descricao);
+                              
+                              // ✅ IDENTIFICAR TRANSFERÊNCIAS por documento ou tipo
+                              const isTransferencia = lancamento.tipo === 'transferencia' || 
+                                                     lancamento.numero_documento?.includes('TRANSF-') ||
+                                                     lancamento.descricao?.includes('TRANSFERÊNCIA');
+                              
+                              console.log('🔍 DEBUG - É Transferência?', isTransferencia ? 'SIM' : 'NÃO');
+                              console.log('🔍 DEBUG - Tipo=transferencia?', lancamento.tipo === 'transferencia' ? 'SIM' : 'NÃO');
+                              console.log('🔍 DEBUG - Doc inclui TRANSF-?', lancamento.numero_documento?.includes('TRANSF-') ? 'SIM' : 'NÃO');
+                              console.log('🔍 DEBUG - Desc inclui TRANSFERÊNCIA?', lancamento.descricao?.includes('TRANSFERÊNCIA') ? 'SIM' : 'NÃO');
+                              
+                              let corClasse = '';
+                              let debugInfo = '';
+                              
+                              // ✅ PRIORIDADE 1: TRANSFERÊNCIAS (antes do match exato)
+                              if (isTransferencia) {
+                                // ✅ TRANSFERÊNCIA: verificar se é entrada ou saída pelo DOCUMENTO
+                                const isEntrada = lancamento.numero_documento?.includes('-ENTRADA');
+                                const isSaida = lancamento.numero_documento?.includes('-SAIDA');
+                                
+                                console.log('🔍 DEBUG - ENTRADA?', isEntrada ? 'SIM' : 'NÃO');
+                                console.log('🔍 DEBUG - SAÍDA?', isSaida ? 'SIM' : 'NÃO');
+                                console.log('🔍 DEBUG - Documento completo:', lancamento.numero_documento);
+                                
+                                if (isEntrada) {
+                                  corClasse = 'text-green-700'; // ENTRADA: verde
+                                  debugInfo = 'Transferência ENTRADA (verde)';
+                                } else if (isSaida) {
+                                  corClasse = 'text-red-700';   // SAÍDA: vermelho
+                                  debugInfo = 'Transferência SAÍDA (vermelho)';
+                                } else {
+                                  // Fallback: usar valor se não tiver sufixo no documento
+                                  corClasse = lancamento.valor > 0 ? 'text-green-700' : 'text-red-700';
+                                  debugInfo = `Transferência por valor (${lancamento.valor > 0 ? 'verde' : 'vermelho'})`;
+                                }
+                              }
+                              // ✅ PRIORIDADE 2: Match exato (só se não for transferência)
+                              else if (validation.valueMatch) {
+                                corClasse = 'text-green-600'; // Match exato: verde especial
+                                debugInfo = 'Match exato';
+                              } 
+                              // ✅ PRIORIDADE 3: Tipo normal
+                              else if (lancamento.tipo === 'receita') {
+                                corClasse = 'text-green-700'; // Receita: verde
+                                debugInfo = 'Receita (verde)';
+                              } else {
+                                corClasse = 'text-red-700'; // Despesa: vermelho
+                                debugInfo = 'Despesa (vermelho)';
+                              }
+                              
+                              console.log('🎨 DEBUG - Classe CSS aplicada:', corClasse);
+                              console.log('🎨 DEBUG - Explicação:', debugInfo);
+                              console.log('🎨 DEBUG - ID do lançamento:', lancamento.id);
+                              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                              
+                              return (
+                                <span className={corClasse}>
+                                  {/* ✅ Campo: valor da tabela lancamentos */}
+                                  R$ {formatarMoeda(Math.abs(lancamento.valor))}
+                                </span>
+                              );
+                            })()}
                           </TableCell>                          
                           <TableCell className="text-center">
                             <div className="flex items-center justify-center gap-1">

@@ -11,7 +11,7 @@ interface Lancamento {
   data_lancamento: string;
   descricao: string;
   valor: number;
-  tipo: 'receita' | 'despesa';
+  tipo: 'receita' | 'despesa' | 'transferencia'; // ✅ ADICIONAR: tipo transferencia
   status: string;
   plano_contas?: {
     nome: string;

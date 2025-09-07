@@ -1124,6 +1124,7 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
     bankTransaction: BankTransaction, 
     suggestionData: {
       selectedLancamentos: any[];
+      primaryLancamento?: any; // ✅ ADICIONAR: lançamento com dados agregados
       primaryLancamentoId?: string | null;
       isValidMatch: boolean;
       totalValue: number;
@@ -1243,10 +1244,26 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
               currentStatus: pair.status
             });
 
+            // ✅ CORREÇÃO: Usar primaryLancamento para múltiplos lançamentos
+            const primaryLancamentoForCard = suggestionData.primaryLancamento || {
+              ...lancamentosSelecionados[0],
+              valor: suggestionData.totalValue, // Usar valor total para múltiplos lançamentos
+              descricao: lancamentosSelecionados.length > 1 
+                ? `${lancamentosSelecionados.length} lançamentos selecionados`
+                : lancamentosSelecionados[0].descricao
+            };
+
+            console.log('🎯 Card primaryLancamento criado:', {
+              isMultiple: lancamentosSelecionados.length > 1,
+              originalFirstValue: lancamentosSelecionados[0]?.valor,
+              newTotalValue: primaryLancamentoForCard.valor,
+              totalValue: suggestionData.totalValue
+            });
+
             return {
               ...pair,
               status: statusFinal as 'conciliado' | 'sugerido' | 'transferencia' | 'sem_match' | 'conflito' | 'pendente' | 'matched' | 'suggested' | 'transfer' | 'no_match',
-              systemTransaction: lancamentosSelecionados[0], // Lançamento primário
+              systemTransaction: primaryLancamentoForCard, // ✅ CORREÇÃO: Usar lançamento com valor total
               systemTransactions: lancamentosSelecionados, // Todos os lançamentos
               matchScore: statusFinal === 'transferencia' ? 100 : 75,
               matchReason: statusFinal === 'transferencia' ? 'Transferência automática' : 'Sugestão manual',
@@ -3147,6 +3164,7 @@ ORDER BY tm.created_at DESC;
           bankTransaction={selectedBankTransaction}
           onCreateSuggestion={(suggestionData: {
             selectedLancamentos: any[];
+            primaryLancamento?: any; // ✅ ADICIONAR: lançamento com dados agregados
             primaryLancamentoId?: string | null;
             isValidMatch: boolean;
             totalValue: number;
@@ -3202,6 +3220,7 @@ ORDER BY tm.created_at DESC;
             // Criar sugestão e atualizar estado local
             handleCreateSuggestion(currentBankTransaction, formattedSuggestion);
           }}
+          empresaId={empresaData?.id}
         />
       )}
         </>
