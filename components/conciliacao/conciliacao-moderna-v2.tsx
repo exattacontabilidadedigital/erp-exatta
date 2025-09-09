@@ -4140,14 +4140,12 @@ function ReconciliationCard({
           pair.status === 'transfer' || pair.status === 'transferencia') && 
           (pair.systemTransaction || (pair.systemTransactions && pair.systemTransactions.length > 0))) ? (
           <div className="relative flex items-start gap-3">
-            {/* ✅ TAG SIMPLES NO CANTO SUPERIOR DIREITO */}
-            {(pair.status === 'suggested' || pair.status === 'sugerido') && (
-              <div className="absolute -top-2 -right-2 z-10">
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-600 text-white shadow-sm">
-                  LANÇAMENTOS
-                </span>
-              </div>
-            )}
+            {/* ✅ TAG LANÇAMENTOS NO CANTO SUPERIOR DIREITO - SEMPRE VISÍVEL */}
+            <div className="absolute -top-2 -right-2 z-10">
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-600 text-white shadow-sm">
+                LANÇAMENTOS
+              </span>
+            </div>
             
             <input type="checkbox" className="mt-1" />
             <div className="flex-1">
@@ -4186,11 +4184,21 @@ function ReconciliationCard({
                 let displayDescription = primaryTransaction.descricao || 'Sem descrição';
                 let shouldShowTooltip = true; // ✅ SEMPRE mostrar ícone do olho para visualizar detalhes
                 
+                // ✅ CORREÇÃO: Ajustar totalCount para lançamentos reconstituídos
+                if (!hasMultipleTransactions && primaryTransaction.descricao && primaryTransaction.descricao.includes('lançamentos selecionados')) {
+                  // Extrair número de lançamentos da descrição reconstituída
+                  const match = primaryTransaction.descricao.match(/(\d+)\s+lançamentos/);
+                  if (match) {
+                    totalCount = parseInt(match[1]);
+                  }
+                }
+                
                 // Se há múltiplos lançamentos, mostrar descrição especial
                 if (hasMultipleTransactions) {
                   displayDescription = `${totalCount} lançamentos selecionados`;
                 } else if (primaryTransaction.descricao && primaryTransaction.descricao.includes('lançamentos selecionados')) {
                   // Manter descrição existente se já indica múltiplos
+                  displayDescription = primaryTransaction.descricao;
                 }
                 
                 return (
@@ -4295,6 +4303,13 @@ function ReconciliationCard({
                       <div className="flex items-center gap-2">
                         <p className="text-xs text-gray-500">Origem: sistema</p>
                         
+                        {/* ✅ Badge de status para transações conciliadas */}
+                        {pair.status === 'conciliado' && (
+                          <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full font-medium">
+                            CONCILIADO
+                          </span>
+                        )}
+                        
                         {/* Badge de status para sugestões */}
                         {(pair.status === 'suggested' || pair.status === 'sugerido') && (
                           <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded-full">
@@ -4309,8 +4324,8 @@ function ReconciliationCard({
                           </span>
                         )}
                         
-                        {/* Badge para múltiplos lançamentos */}
-                        {hasMultipleTransactions && (
+                        {/* ✅ Badge para múltiplos lançamentos - SEMPRE MOSTRA QUANDO APLICÁVEL */}
+                        {(hasMultipleTransactions || (primaryTransaction.descricao && primaryTransaction.descricao.includes('lançamentos selecionados'))) && (
                           <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full font-medium">
                             MÚLTIPLOS ({totalCount})
                           </span>
