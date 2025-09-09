@@ -4167,12 +4167,6 @@ function ReconciliationCard({
                 if (hasMultipleTransactions) {
                   const totalValue = pair.systemTransactions!.reduce((total, tx) => total + Math.abs(tx.valor), 0);
                   totalCount = pair.systemTransactions!.length;
-                  console.log(`💰 MÚLTIPLOS LANÇAMENTOS EXIBINDO:`, {
-                    pairId: pair.bankTransaction?.id,
-                    calculatedTotal: totalValue,
-                    individualValues: pair.systemTransactions!.map(tx => Math.abs(tx.valor)),
-                    count: totalCount
-                  });
                   displayValue = formatCurrency(totalValue);
                 } else if (hasSingleTransaction) {
                   displayValue = formatCurrency(Math.abs(pair.systemTransactions![0].valor));
@@ -4203,6 +4197,8 @@ function ReconciliationCard({
                 
                 return (
                   <>
+                    {/* ✅ CORREÇÃO: Usar layout padrão com tooltip para TODOS os tipos de cards */}
+                    {/* Layout padrão para lançamentos únicos e múltiplos (com tooltip consistente) */}
                     <div className="text-sm text-gray-700 mb-1">
                       {formatDate(primaryTransaction.data_lancamento)}
                     </div>
