@@ -4237,8 +4237,11 @@ function ReconciliationCard({
                                     </h4>
                                   </div>
                                   <div className="p-3 space-y-2 max-h-60 overflow-y-auto">
-                                    {/* ✅ Mostrar todos os lançamentos disponíveis */}
-                                    {(pair.systemTransactions || [primaryTransaction]).map((lancamento, index) => (
+                                    {/* Mostrar lançamentos dos systemTransactions ou fallback para primaryTransaction */}
+                                    {(pair.systemTransactions && pair.systemTransactions.length > 0 
+                                      ? pair.systemTransactions 
+                                      : [primaryTransaction]
+                                    ).map((lancamento, index) => (
                                       <div 
                                         key={lancamento.id} 
                                         className="flex items-center justify-between p-2 rounded border-l-4 border-l-gray-300 bg-gray-50"
