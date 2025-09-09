@@ -49,7 +49,7 @@ interface BuscarLancamentosModalProps {
     closeModal?: boolean;
     autoMatch?: boolean;
     useExistingHandling?: boolean;
-    matchType?: 'exact_match' | 'manual' | 'multiple_transactions';
+    matchType?: 'exact' | 'manual' | 'multiple_transactions';
     confidenceLevel?: 'high' | 'medium' | 'low';
     validation?: any;
     summary?: any;
@@ -89,6 +89,7 @@ export default function BuscarLancamentosModal({
   const [primaryLancamentoId, setPrimaryLancamentoId] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingLancamento, setEditingLancamento] = useState<Lancamento | null>(null);
+  const [matchesLoaded, setMatchesLoaded] = useState(false); // ✅ NOVO: Indicar se matches foram carregados
 
   // Usar bankTransaction ou transacaoSelecionada para compatibilidade
   const transactionData = bankTransaction || transacaoSelecionada;
@@ -147,6 +148,72 @@ export default function BuscarLancamentosModal({
 
   // Estado para debug
   const [debugInfo, setDebugInfo] = useState<any>(null);
+
+  // ✅ NOVO: Função para carregar matches existentes (com fallback silencioso)
+  const loadExistingMatches = useCallback(async () => {
+    if (!transactionData?.id) {
+      console.log('📝 Sem ID de transação bancária - não é possível carregar matches existentes');
+      return;
+    }
+
+    try {
+      console.log('🔍 Carregando matches existentes para transação bancária:', transactionData.id);
+      
+      const response = await fetch(`/api/conciliacao/get-multiple-matches?bankTransactionId=${transactionData.id}`);
+      
+      if (!response.ok) {
+        console.log('📝 Nenhum match existente encontrado (status:', response.status, ')');
+        return; // Falha silenciosa
+      }
+
+      const result = await response.json();
+      
+      if (result.success && result.data?.matches?.length > 0) {
+        const matches = result.data.matches;
+        const primaryMatch = matches.find((m: any) => m.is_primary) || matches[0];
+        
+        // Reconstituir estado das seleções
+        const matchedLancamentos = matches.map((match: any) => match.lancamento);
+        
+        console.log('✅ Matches existentes carregados:', {
+          totalMatches: matches.length,
+          primaryLancamentoId: primaryMatch?.lancamento?.id,
+          lancamentosIds: matchedLancamentos.map((l: any) => l.id)
+        });
+        
+        // Atualizar estado
+        setSelectedLancamentos(matchedLancamentos);
+        setPrimaryLancamentoId(primaryMatch?.lancamento?.id || null);
+        setMatchesLoaded(true); // ✅ NOVO: Marcar como carregado
+        
+        // Mostrar feedback visual
+        console.log('🎯 Estado restaurado com sucesso:', {
+          selectedCount: matchedLancamentos.length,
+          primaryId: primaryMatch?.lancamento?.id
+        });
+        
+      } else {
+        console.log('📝 Nenhum match válido encontrado nos dados retornados');
+      }
+      
+    } catch (error) {
+      console.log('📝 Erro silencioso ao carregar matches existentes:', error.message || error);
+      // ✅ IMPORTANTE: Falha silenciosa - não interromper o funcionamento normal
+    }
+  }, [transactionData?.id]);
+
+  // ✅ MODIFICADO: useEffect para carregar matches quando modal abrir (com fallback)
+  useEffect(() => {
+    if (isOpen && transactionData?.id) {
+      // Limpar seleções anteriores primeiro
+      setSelectedLancamentos([]);
+      setPrimaryLancamentoId(null);
+      setMatchesLoaded(false); // ✅ NOVO: Reset do estado de carregamento
+      
+      // Tentar carregar matches existentes (falha silenciosa se der erro)
+      loadExistingMatches();
+    }
+  }, [isOpen, loadExistingMatches]);
 
   // Limpar seleções sempre que o modal for aberto
   useEffect(() => {
@@ -470,12 +537,12 @@ export default function BuscarLancamentosModal({
       const hasDiscrepancy = selectedLancamentos.length > 1 || !validation.isValid || !isExactMatchValue;
       
       // Determinar tipo de match
-      let matchType: 'exact_match' | 'manual' | 'multiple_transactions' = 'manual';
+      let matchType: 'exact' | 'manual' | 'multiple_transactions' = 'manual';
       let confidenceLevel: 'high' | 'medium' | 'low' = 'medium';
       
       // ✅ ATUALIZADA: Lógica melhorada para múltiplos lançamentos
       if (selectedLancamentos.length === 1 && validation.isValid && isExactMatchValue) {
-        matchType = 'exact_match';
+        matchType = 'exact';
         confidenceLevel = 'high';
       } else if (selectedLancamentos.length === 1 && validation.isValid && isValueCompatible) {
         // Match com pequena divergência - ainda manual mas com confiança média
@@ -559,6 +626,167 @@ export default function BuscarLancamentosModal({
     } catch (error) {
       console.error('❌ Erro ao processar seleção:', error);
       // Não fechar o modal em caso de erro para permitir ao usuário tentar novamente
+    }
+  };
+
+  // ✅ FUNÇÃO TEMPORÁRIA: Nova implementação (substituirá a função acima)
+  const handleCreateSuggestionNew = async () => {
+    // ✅ NOVA VALIDAÇÃO: Verificar se botão deveria estar habilitado
+    if (!isSuggestionButtonEnabled()) {
+      console.warn('⚠️ Tentativa de criar sugestão com diferença muito grande bloqueada por segurança');
+      alert('❌ Não é possível criar sugestão: a diferença entre os valores é muito grande.\n\nVerifique se os lançamentos selecionados estão corretos ou se há algum erro na seleção.');
+      return;
+    }
+
+    // Validação inicial
+    if (selectedLancamentos.length === 0) {
+      console.warn('⚠️ Nenhum lançamento selecionado');
+      return;
+    }
+
+    if (!transactionData?.id) {
+      console.error('❌ ID da transação bancária não encontrado');
+      alert('Erro: ID da transação bancária não encontrado. Recarregue a página e tente novamente.');
+      return;
+    }
+
+    // Verificar se algum lançamento selecionado está em uso
+    const lancamentosEmUso = selectedLancamentos.filter(l => usageStatus[l.id]?.inUse);
+    if (lancamentosEmUso.length > 0) {
+      console.error('❌ Alguns lançamentos selecionados já estão em uso:', lancamentosEmUso.map(l => l.id));
+      alert('Erro: Alguns lançamentos selecionados já estão em uso. Por favor, remova-os da seleção.');
+      return;
+    }
+
+    console.log('🎯 Iniciando criação de sugestão múltipla:', {
+      totalSelecionados: selectedLancamentos.length,
+      lancamentosIds: selectedLancamentos.map(l => l.id),
+      bankTransactionId: transactionData.id,
+      primaryLancamentoId
+    });
+
+    try {
+      // Adicionar estado de loading
+      setIsLoading(true);
+
+      // Calcular valores e validações
+      const totalValue = calculateSelectedTotal();
+      const optimalDate = calculateOptimalDate();
+      const validation = validateMatch(selectedLancamentos[0]); // Usar primeiro para referência
+      const isValueCompatible = isSelectedTotalCompatible();
+      const isExactMatchValue = isExactMatch();
+      
+      // Determinar tipo de match e nível de confiança
+      let matchType: 'exact' | 'manual' | 'multiple_transactions' = 'manual';
+      let confidenceLevel: 'high' | 'medium' | 'low' = 'medium';
+      
+      if (selectedLancamentos.length === 1 && validation.isValid && isExactMatchValue) {
+        matchType = 'exact';
+        confidenceLevel = 'high';
+      } else if (selectedLancamentos.length > 1) {
+        matchType = 'multiple_transactions';
+        if (isExactMatchValue) {
+          confidenceLevel = 'high';
+        } else if (isValueCompatible) {
+          confidenceLevel = 'medium';
+        } else {
+          confidenceLevel = 'low';
+        }
+      }
+
+      // ✅ NOVO: Dados para API de múltiplos matches
+      const apiData = {
+        selectedLancamentos,
+        primaryLancamento: selectedLancamentos.find(l => l.id === primaryLancamentoId) || selectedLancamentos[0],
+        primaryLancamentoId: primaryLancamentoId || selectedLancamentos[0]?.id,
+        bankTransactionId: transactionData.id,
+        isValidMatch: selectedLancamentos.length === 1 && validation.isValid && isExactMatchValue,
+        totalValue,
+        matchType,
+        confidenceLevel,
+        validation: {
+          dateMatch: validation.dateMatch,
+          valueMatch: validation.valueMatch,
+          valueDifference: validation.valueDifference,
+          isExactMatch: isExactMatchValue
+        },
+        summary: {
+          selectedCount: selectedLancamentos.length,
+          bankAmount: transactionData ? Math.abs(parseFloat(transactionData.amount || transactionData.valor || '0')) : 0,
+          systemAmount: totalValue,
+          difference: transactionData ? Math.abs(totalValue - Math.abs(parseFloat(transactionData.amount || transactionData.valor || '0'))) : 0
+        }
+      };
+
+      console.log('📤 Enviando dados para API de múltiplos matches:', {
+        endpoint: '/api/conciliacao/create-suggestion',
+        selectedCount: selectedLancamentos.length,
+        matchType,
+        confidenceLevel,
+        isValidMatch: apiData.isValidMatch
+      });
+
+      // ✅ NOVA CHAMADA: API específica para múltiplos matches
+      const response = await fetch('/api/conciliacao/create-suggestion', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(apiData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Erro na API: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      console.log('✅ Múltiplos matches salvos com sucesso:', {
+        matchesCreated: result.data?.matches?.length || 0,
+        bankTransactionStatus: result.data?.bankTransaction?.status,
+        matchedLancamentos: result.data?.matchedLancamentos?.length || 0
+      });
+
+      // ✅ OPCIONAL: Callback para o componente pai (se necessário)
+      if (onCreateSuggestion) {
+        const callbackData = {
+          selectedLancamentos,
+          primaryLancamento: apiData.primaryLancamento,
+          primaryLancamentoId: apiData.primaryLancamentoId,
+          isValidMatch: apiData.isValidMatch,
+          totalValue,
+          hasDiscrepancy: !isExactMatchValue,
+          closeModal: true,
+          autoMatch: apiData.isValidMatch,
+          matchType,
+          confidenceLevel,
+          validation: apiData.validation,
+          summary: apiData.summary,
+          useExistingHandling: false, // ✅ NOVO: Indica que foi processado pela nova API
+          apiResult: result // ✅ NOVO: Incluir resultado da API
+        };
+        
+        onCreateSuggestion(callbackData);
+      }
+
+      // Mostrar feedback de sucesso
+      if (selectedLancamentos.length === 1) {
+        alert(`✅ Lançamento ${apiData.isValidMatch ? 'conciliado' : 'sugerido'} com sucesso!`);
+      } else {
+        alert(`✅ ${selectedLancamentos.length} lançamentos ${apiData.isValidMatch ? 'conciliados' : 'sugeridos'} com sucesso!`);
+      }
+      
+      // Fechar modal
+      console.log('✅ Fechando modal automaticamente');
+      onClose();
+
+    } catch (error) {
+      console.error('❌ Erro ao processar múltiplos matches:', error);
+      alert(`❌ Erro ao salvar: ${error instanceof Error ? error.message : 'Erro desconhecido'}\n\nTente novamente ou recarregue a página.`);
+      // Não fechar o modal em caso de erro
+    } finally {
+      setIsLoading(false);
     }
   };
   
@@ -1345,6 +1573,11 @@ export default function BuscarLancamentosModal({
                           <div className="bg-gray-50 px-3 py-2 border-b rounded-t-lg">
                             <h4 className="font-medium text-sm text-gray-700">
                               Lançamentos Selecionados ({selectedLancamentos.length})
+                              {matchesLoaded && (
+                                <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                                  ↻ Restaurado
+                                </span>
+                              )}
                             </h4>
                           </div>
                           <div className="p-3 space-y-2 max-h-60 overflow-y-auto">
@@ -2167,7 +2400,7 @@ export default function BuscarLancamentosModal({
             )}
             
             <Button 
-              onClick={handleCreateSuggestion}
+              onClick={handleCreateSuggestionNew}
               disabled={!isSuggestionButtonEnabled()}
               className={`px-6 transition-all duration-200 ${getSuggestionButtonStyle()}`}
             >
