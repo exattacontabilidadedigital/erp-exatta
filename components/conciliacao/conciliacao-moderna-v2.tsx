@@ -4159,17 +4159,30 @@ function ReconciliationCard({
                 if (!primaryTransaction) {
                   return <div className="text-sm text-gray-500">Dados não disponíveis</div>;
                 }
+
+                // ✅ NOVO: Detectar se é um lançamento conciliado reconstituído de múltiplos
+                const isReconstitutedMultiple = (
+                  (pair.status === 'matched' || pair.status === 'conciliado') &&
+                  primaryTransaction.descricao && 
+                  primaryTransaction.descricao.includes('lançamentos selecionados') &&
+                  (!pair.systemTransactions || pair.systemTransactions.length <= 1)
+                );
+                
+                // ✅ CORREÇÃO: Para cards reconstituídos, usar lógica diferente para o tooltip
+                const effectiveTransactions = pair.systemTransactions && pair.systemTransactions.length > 0 
+                  ? pair.systemTransactions 
+                  : [primaryTransaction];
+                
+                const effectiveHasMultiple = effectiveTransactions.length > 1 || isReconstitutedMultiple;
                 
                 // Calcular valor total
                 let displayValue;
                 let totalCount = 1;
                 
-                if (hasMultipleTransactions) {
-                  const totalValue = pair.systemTransactions!.reduce((total, tx) => total + Math.abs(tx.valor), 0);
-                  totalCount = pair.systemTransactions!.length;
+                if (effectiveHasMultiple) {
+                  const totalValue = effectiveTransactions.reduce((total, tx) => total + Math.abs(tx.valor), 0);
+                  totalCount = effectiveTransactions.length;
                   displayValue = formatCurrency(totalValue);
-                } else if (hasSingleTransaction) {
-                  displayValue = formatCurrency(Math.abs(pair.systemTransactions![0].valor));
                 } else {
                   displayValue = formatCurrency(Math.abs(primaryTransaction.valor));
                 }
@@ -4179,7 +4192,7 @@ function ReconciliationCard({
                 let shouldShowTooltip = true; // ✅ SEMPRE mostrar ícone do olho para visualizar detalhes
                 
                 // ✅ CORREÇÃO: Ajustar totalCount para lançamentos reconstituídos
-                if (!hasMultipleTransactions && primaryTransaction.descricao && primaryTransaction.descricao.includes('lançamentos selecionados')) {
+                if (isReconstitutedMultiple && primaryTransaction.descricao) {
                   // Extrair número de lançamentos da descrição reconstituída
                   const match = primaryTransaction.descricao.match(/(\d+)\s+lançamentos/);
                   if (match) {
@@ -4188,7 +4201,7 @@ function ReconciliationCard({
                 }
                 
                 // Se há múltiplos lançamentos, mostrar descrição especial
-                if (hasMultipleTransactions) {
+                if (effectiveHasMultiple) {
                   displayDescription = `${totalCount} lançamentos selecionados`;
                 } else if (primaryTransaction.descricao && primaryTransaction.descricao.includes('lançamentos selecionados')) {
                   // Manter descrição existente se já indica múltiplos
@@ -4221,69 +4234,124 @@ function ReconciliationCard({
                               </p>
                             </TooltipTrigger>
                             {/* ✅ CORREÇÃO: Mostrar detalhes tanto para múltiplos quanto para único lançamento */}
-                            {(pair.systemTransactions && pair.systemTransactions.length > 0) || pair.systemTransaction ? (
+                            {effectiveTransactions.length > 0 ? (
                               <TooltipContent side="bottom" className="p-0 max-w-md">
                                 <div className="bg-white border border-gray-200 rounded-lg shadow-lg">
                                   <div className="bg-gray-50 px-3 py-2 border-b rounded-t-lg">
                                     <h4 className="font-medium text-sm text-gray-700">
-                                      {pair.systemTransactions && pair.systemTransactions.length > 1 
-                                        ? `Lançamentos Selecionados (${pair.systemTransactions.length})`
+                                      {effectiveTransactions.length > 1 
+                                        ? `Lançamentos Selecionados (${effectiveTransactions.length})`
                                         : 'Detalhes do Lançamento'
                                       }
                                     </h4>
                                   </div>
                                   <div className="p-3 space-y-2 max-h-60 overflow-y-auto">
-                                    {/* Mostrar lançamentos dos systemTransactions ou fallback para primaryTransaction */}
-                                    {(pair.systemTransactions && pair.systemTransactions.length > 0 
-                                      ? pair.systemTransactions 
-                                      : [primaryTransaction]
-                                    ).map((lancamento, index) => (
-                                      <div 
-                                        key={lancamento.id} 
-                                        className="flex items-center justify-between p-2 rounded border-l-4 border-l-gray-300 bg-gray-50"
-                                      >
-                                        <div className="flex-1 min-w-0">
-                                          <div className="flex items-center gap-2 mb-1">
-                                            <span className="text-xs font-medium text-gray-600">
-                                              {formatDate(lancamento.data_lancamento)}
-                                            </span>
-                                            {lancamento.numero_documento && (
-                                              <span className="text-xs text-gray-500 truncate max-w-20" title={lancamento.numero_documento}>
-                                                #{lancamento.numero_documento}
+                                    {/* ✅ Mostrar os lançamentos efetivos (originais ou reconstituídos) */}
+                                    {effectiveTransactions.map((lancamento, index) => {
+                                      // ✅ CORREÇÃO: Para cards reconstituídos, simular múltiplos lançamentos
+                                      if (isReconstitutedMultiple && effectiveTransactions.length === 1) {
+                                        // Criar lançamentos simulados baseados na descrição
+                                        const simulatedTransactions = [];
+                                        for (let i = 0; i < totalCount; i++) {
+                                          simulatedTransactions.push({
+                                            id: `${lancamento.id}-${i}`,
+                                            data_lancamento: lancamento.data_lancamento,
+                                            descricao: `Lançamento ${i + 1}`,
+                                            valor: Math.abs(lancamento.valor) / totalCount,
+                                            tipo: lancamento.tipo,
+                                            numero_documento: `#${i + 1}`,
+                                            plano_conta: lancamento.plano_conta
+                                          });
+                                        }
+                                        
+                                        return simulatedTransactions.map((simLancamento, simIndex) => (
+                                          <div 
+                                            key={`sim-${simLancamento.id}`} 
+                                            className="flex items-center justify-between p-2 rounded border-l-4 border-l-gray-300 bg-gray-50"
+                                          >
+                                            <div className="flex-1 min-w-0">
+                                              <div className="flex items-center gap-2 mb-1">
+                                                <span className="text-xs font-medium text-gray-600">
+                                                  {formatDate(simLancamento.data_lancamento)}
+                                                </span>
+                                                <span className="text-xs text-gray-500 truncate max-w-20" title={simLancamento.numero_documento}>
+                                                  {simLancamento.numero_documento}
+                                                </span>
+                                              </div>
+                                              <p className="text-sm text-gray-700 truncate" title={simLancamento.descricao}>
+                                                {simLancamento.descricao}
+                                              </p>
+                                              {simLancamento.plano_conta && (
+                                                <p className="text-xs text-gray-500 truncate" title={simLancamento.plano_conta}>
+                                                  {simLancamento.plano_conta}
+                                                </p>
+                                              )}
+                                            </div>
+                                            <div className="flex-shrink-0 text-right ml-3">
+                                              <span className={`font-medium text-sm ${
+                                                simLancamento.tipo === 'receita' ? 'text-green-700' : 'text-red-700'
+                                              }`}>
+                                                {formatCurrency(Math.abs(simLancamento.valor))}
                                               </span>
+                                              <div className="text-xs text-gray-500">
+                                                {simLancamento.tipo === 'receita' ? 'Receita' : 
+                                                 simLancamento.tipo === 'despesa' ? 'Despesa' : 
+                                                 'Outro'}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ));
+                                      }
+                                      
+                                      // Lançamento normal
+                                      return (
+                                        <div 
+                                          key={lancamento.id} 
+                                          className="flex items-center justify-between p-2 rounded border-l-4 border-l-gray-300 bg-gray-50"
+                                        >
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 mb-1">
+                                              <span className="text-xs font-medium text-gray-600">
+                                                {formatDate(lancamento.data_lancamento)}
+                                              </span>
+                                              {lancamento.numero_documento && (
+                                                <span className="text-xs text-gray-500 truncate max-w-20" title={lancamento.numero_documento}>
+                                                  #{lancamento.numero_documento}
+                                                </span>
+                                              )}
+                                            </div>
+                                            <p className="text-sm text-gray-700 truncate" title={lancamento.descricao}>
+                                              {lancamento.descricao || 'Sem descrição'}
+                                            </p>
+                                            {lancamento.plano_conta && (
+                                              <p className="text-xs text-gray-500 truncate" title={lancamento.plano_conta}>
+                                                {lancamento.plano_conta}
+                                              </p>
                                             )}
                                           </div>
-                                          <p className="text-sm text-gray-700 truncate" title={lancamento.descricao}>
-                                            {lancamento.descricao || 'Sem descrição'}
-                                          </p>
-                                          {lancamento.plano_conta && (
-                                            <p className="text-xs text-gray-500 truncate" title={lancamento.plano_conta}>
-                                              {lancamento.plano_conta}
-                                            </p>
-                                          )}
-                                        </div>
-                                        <div className="flex-shrink-0 text-right ml-3">
-                                          <span className={`font-medium text-sm ${
-                                            lancamento.tipo === 'receita' ? 'text-green-700' : 'text-red-700'
-                                          }`}>
-                                            {formatCurrency(Math.abs(lancamento.valor))}
-                                          </span>
-                                          <div className="text-xs text-gray-500">
-                                            {lancamento.tipo === 'receita' ? 'Receita' : 
-                                             lancamento.tipo === 'despesa' ? 'Despesa' : 
-                                             'Outro'}
+                                          <div className="flex-shrink-0 text-right ml-3">
+                                            <span className={`font-medium text-sm ${
+                                              lancamento.tipo === 'receita' ? 'text-green-700' : 'text-red-700'
+                                            }`}>
+                                              {formatCurrency(Math.abs(lancamento.valor))}
+                                            </span>
+                                            <div className="text-xs text-gray-500">
+                                              {lancamento.tipo === 'receita' ? 'Receita' : 
+                                               lancamento.tipo === 'despesa' ? 'Despesa' : 
+                                               'Outro'}
+                                            </div>
                                           </div>
                                         </div>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                     
                                     {/* Linha de total */}
-                                    {pair.systemTransactions && pair.systemTransactions.length > 1 && (
+                                    {(effectiveTransactions.length > 1 || isReconstitutedMultiple) && (
                                       <div className="border-t pt-2 mt-2">
                                         <div className="flex justify-between items-center font-medium">
                                           <span className="text-sm text-gray-700">Total:</span>
                                           <span className="text-sm text-green-600">
-                                            {formatCurrency(pair.systemTransactions.reduce((total, tx) => total + Math.abs(tx.valor), 0))}
+                                            {formatCurrency(effectiveTransactions.reduce((total, tx) => total + Math.abs(tx.valor), 0))}
                                           </span>
                                         </div>
                                       </div>
@@ -4324,7 +4392,7 @@ function ReconciliationCard({
                         )}
                         
                         {/* ✅ Badge para múltiplos lançamentos - SEMPRE MOSTRA QUANDO APLICÁVEL */}
-                        {(hasMultipleTransactions || (primaryTransaction.descricao && primaryTransaction.descricao.includes('lançamentos selecionados'))) && (
+                        {(effectiveHasMultiple || (primaryTransaction.descricao && primaryTransaction.descricao.includes('lançamentos selecionados'))) && (
                           <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full font-medium">
                             MÚLTIPLOS ({totalCount})
                           </span>
@@ -4332,13 +4400,13 @@ function ReconciliationCard({
                       </div>
                       
                       {/* ✅ MOSTRAR RESUMO DE MÚLTIPLOS LANÇAMENTOS SE HOUVER */}
-                      {hasMultipleTransactions && (
+                      {effectiveHasMultiple && (
                         <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
                           <div className="text-xs text-blue-700 font-medium">
                             {totalCount} lançamentos selecionados
                           </div>
                           <div className="text-xs text-blue-600 mt-1">
-                            Valor total: {formatCurrency(pair.systemTransactions!.reduce((total, tx) => total + Math.abs(tx.valor), 0))}
+                            Valor total: {formatCurrency(effectiveTransactions.reduce((total, tx) => total + Math.abs(tx.valor), 0))}
                           </div>
                         </div>
                       )}
