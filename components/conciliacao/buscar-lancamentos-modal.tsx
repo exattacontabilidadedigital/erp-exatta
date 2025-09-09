@@ -718,23 +718,63 @@ export default function BuscarLancamentosModal({
         }
       };
 
-      console.log('📤 Enviando dados para API de múltiplos matches:', {
-        endpoint: '/api/conciliacao/create-suggestion',
+      console.log('📤 Determinando API a ser chamada:', {
         selectedCount: selectedLancamentos.length,
         matchType,
         confidenceLevel,
         isValidMatch: apiData.isValidMatch
       });
 
-      // ✅ NOVA CHAMADA: API específica para múltiplos matches
-      const response = await fetch('/api/conciliacao/create-suggestion', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(apiData)
-      });
+      let response;
 
+      // ✅ DECISÃO: Usar API específica baseada no número de lançamentos
+      if (selectedLancamentos.length === 1) {
+        // ✅ CASO 1: Lançamento único - usar nova API específica
+        const singleApiData = {
+          lancamentoId: selectedLancamentos[0].id,
+          bankTransactionId: transactionData.id,
+          matchType: matchType === 'exact' ? 'exact_match' : matchType === 'multiple_transactions' ? 'manual' : matchType,
+          confidenceLevel,
+          isValidMatch: apiData.isValidMatch,
+          validation: apiData.validation,
+          summary: {
+            bankAmount: apiData.summary.bankAmount,
+            systemAmount: apiData.summary.systemAmount,
+            difference: apiData.summary.difference
+          }
+        };
+
+        console.log('📤 Chamando API de lançamento único:', {
+          endpoint: '/api/conciliacao/create-single-suggestion',
+          lancamentoId: singleApiData.lancamentoId,
+          matchType: singleApiData.matchType
+        });
+
+        response = await fetch('/api/conciliacao/create-single-suggestion', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(singleApiData)
+        });
+
+      } else {
+        // ✅ CASO 2: Múltiplos lançamentos - usar API existente
+        console.log('📤 Chamando API de múltiplos lançamentos:', {
+          endpoint: '/api/conciliacao/create-suggestion',
+          selectedCount: selectedLancamentos.length
+        });
+
+        response = await fetch('/api/conciliacao/create-suggestion', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(apiData)
+        });
+      }
+
+      // ✅ PROCESSAMENTO COMUM DA RESPOSTA
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || `Erro na API: ${response.status}`);
@@ -742,11 +782,20 @@ export default function BuscarLancamentosModal({
 
       const result = await response.json();
       
-      console.log('✅ Múltiplos matches salvos com sucesso:', {
-        matchesCreated: result.data?.matches?.length || 0,
-        bankTransactionStatus: result.data?.bankTransaction?.status,
-        matchedLancamentos: result.data?.matchedLancamentos?.length || 0
-      });
+      // ✅ LOG ESPECÍFICO BASEADO NO TIPO DE OPERAÇÃO
+      if (selectedLancamentos.length === 1) {
+        console.log('✅ Lançamento único processado com sucesso:', {
+          matchCreated: result.data?.match?.id || 'N/A',
+          bankTransactionStatus: result.data?.bankTransaction?.status,
+          matchedLancamento: result.data?.matchedLancamento
+        });
+      } else {
+        console.log('✅ Múltiplos lançamentos processados com sucesso:', {
+          matchesCreated: result.data?.matches?.length || 0,
+          bankTransactionStatus: result.data?.bankTransaction?.status,
+          matchedLancamentos: result.data?.matchedLancamentos?.length || 0
+        });
+      }
 
       // ✅ OPCIONAL: Callback para o componente pai (se necessário)
       if (onCreateSuggestion) {

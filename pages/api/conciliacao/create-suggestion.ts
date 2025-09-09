@@ -128,8 +128,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // ✅ PASSO 4: Criar novos matches para CADA lançamento selecionado
     const bankAmount = summary?.bankAmount || totalValue;
     
-    // ✅ CORRIGIDO: usar "manual" para múltiplas seleções (constraint aceita)
-    const finalMatchType = matchType === 'multiple_transactions' ? 'manual' : matchType;
+    // ✅ CORRIGIDO: mapear match_type para valores aceitos pelo constraint
+    // Baseado na verificação: apenas "manual" e "automatic" são aceitos
+    let finalMatchType: string;
+    switch (matchType) {
+      case 'exact':
+        finalMatchType = 'automatic'; // ✅ CORRIGIDO: usar automatic para matches exatos
+        break;
+      case 'multiple_transactions':
+        finalMatchType = 'manual'; // ✅ CORRIGIDO: usar manual para múltiplas
+        break;
+      case 'manual':
+      default:
+        finalMatchType = 'manual'; // ✅ CORRIGIDO: usar manual como padrão
+        break;
+    }
     
     const newMatches = selectedLancamentos.map((lancamento, index) => ({
       bank_transaction_id: bankTransactionId,
@@ -168,14 +181,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // ✅ PASSO 6: Atualizar status da transação bancária
-    const bankStatus = isValidMatch && matchType === 'exact' ? 'matched' : 'sugerido';
+    const bankStatus = isValidMatch && finalMatchType === 'automatic' ? 'sugerido' : 'sugerido';
     
     const { error: updateBankError } = await supabase
       .from('bank_transactions')
       .update({
         reconciliation_status: bankStatus, // ✅ CORRIGIDO: usar reconciliation_status
-        // ✅ NOVO: Campos específicos para múltiplos
-        match_type: finalMatchType, // ✅ CORRIGIDO: usar finalMatchType
+        // ✅ REMOVIDO: match_type da bank_transactions (pode ter constraint diferente)
+        // match_type: finalMatchType,
         matched_amount: totalValue,
         match_count: selectedLancamentos.length,
         primary_lancamento_id: primaryLancamentoId,
@@ -190,7 +203,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // ✅ PASSO 7: Atualizar status dos lançamentos do sistema
-    const lancamentoStatus = isValidMatch && matchType === 'exact' ? 'conciliado' : 'com_sugestao';
+    const lancamentoStatus = isValidMatch && finalMatchType === 'automatic' ? 'conciliado' : 'com_sugestao';
 
     const { error: updateLancamentosError } = await supabase
       .from('lancamentos')
