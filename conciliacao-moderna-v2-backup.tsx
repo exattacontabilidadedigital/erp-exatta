@@ -437,7 +437,7 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
 
       console.log('📊 PERÍODO USADO NA API:', { periodo, periodStart, periodEnd });
 
-      const url = `/api/reconciliation/suggestions?bank_account_id=${selectedBankAccountId}&period_start=${periodStart}&period_end=${periodEnd}&empresa_id=${empresaData.id}&include_reconciled=${includeReconciled}`;
+      const url = `/api/reconciliation/suggestions?bank_account_id=${selectedBankAccountId}&period_start=${periodStart}&period_end=${periodEnd}&empresa_id=${empresaData.id}&include_reconciled=true`;
       console.log('📡 Fazendo requisição para:', url);
 
       const response = await fetch(url);
@@ -460,6 +460,45 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
           acc[status] = (acc[status] || 0) + 1;
           return acc;
         }, {})
+      });
+
+      // 🔍 ANÁLISE ESPECÍFICA DE CONCILIADOS: Como a API retorna transações conciliadas?
+      const conciliadosPairs = data.pairs?.filter((pair: any) => 
+        pair.bankTransaction?.status_conciliacao === 'conciliado'
+      ) || [];
+      
+      console.log('🔍 ANÁLISE ESPECÍFICA - CONCILIADOS:', {
+        totalConciliados: conciliadosPairs.length,
+        estruturaPrimeiroConciliado: conciliadosPairs[0] ? {
+          id: conciliadosPairs[0].id,
+          status: conciliadosPairs[0].status,
+          bankTransaction: {
+            id: conciliadosPairs[0].bankTransaction?.id,
+            memo: conciliadosPairs[0].bankTransaction?.memo,
+            amount: conciliadosPairs[0].bankTransaction?.amount,
+            status_conciliacao: conciliadosPairs[0].bankTransaction?.status_conciliacao
+          },
+          // 🎯 PONTO CHAVE: Como são retornadas as system transactions?
+          hasSystemTransaction: !!conciliadosPairs[0].systemTransaction,
+          hasSystemTransactions: !!conciliadosPairs[0].systemTransactions,
+          systemTransactionStructure: conciliadosPairs[0].systemTransaction ? {
+            id: conciliadosPairs[0].systemTransaction.id,
+            tipo: conciliadosPairs[0].systemTransaction.tipo,
+            amount: conciliadosPairs[0].systemTransaction.amount
+          } : null,
+          systemTransactionsStructure: conciliadosPairs[0].systemTransactions ? {
+            isArray: Array.isArray(conciliadosPairs[0].systemTransactions),
+            length: conciliadosPairs[0].systemTransactions.length,
+            firstItem: conciliadosPairs[0].systemTransactions[0]
+          } : null
+        } : null,
+        todosConciliados: conciliadosPairs.map((pair: any) => ({
+          id: pair.id,
+          hasSystemTransaction: !!pair.systemTransaction,
+          hasSystemTransactions: !!pair.systemTransactions,
+          systemTransactionId: pair.systemTransaction?.id,
+          systemTransactionsCount: pair.systemTransactions?.length || 0
+        }))
       });
       
       // ✅ CORREÇÃO CRÍTICA: SEMPRE usar dados diretamente da API (estado real do banco)
@@ -1818,7 +1857,7 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
               
               // Mostrar erro mais informativo
               const conflictInfo = errorData.existing_matches?.length > 0 
-                ? `Conflitos: ${errorData.existing_matches.map(m => m.bank_transaction_id || 'ID não identificado').join(', ')}`
+                ? `Conflitos: ${errorData.existing_matches.map((m: any) => m.bank_transaction_id || 'ID não identificado').join(', ')}`
                 : 'Conflitos não identificados';
                 
               throw new Error(`Conflito persistente. ${conflictInfo}. Verifique a tabela transaction_matches.`);
@@ -3183,6 +3222,38 @@ function ReconciliationCard({
             systemTransactionType: pair.systemTransaction?.tipo,
             systemTransactionDesc: pair.systemTransaction?.descricao
           });
+          
+          // ✅ NOVO DEBUG: Log específico após conciliação
+          if (pair.bankTransaction?.status_conciliacao === 'conciliado') {
+            console.log('🟢 CARD CONCILIADO DETECTADO:', {
+              pairId: pair.id,
+              status_conciliacao: pair.bankTransaction.status_conciliacao,
+              frontendStatus: pair.status,
+              hasSystemTransaction: !!pair.systemTransaction,
+              systemTransactionData: pair.systemTransaction ? {
+                id: pair.systemTransaction.id,
+                descricao: pair.systemTransaction.descricao,
+                valor: pair.systemTransaction.valor,
+                tipo: pair.systemTransaction.tipo
+              } : null,
+              hasSystemTransactions: !!pair.systemTransactions,
+              systemTransactionsCount: pair.systemTransactions?.length,
+              shouldShowSystemData: (() => {
+                const isReconciled = pair.bankTransaction?.status_conciliacao === 'conciliado';
+                const hasSystemData = !!pair.systemTransaction;
+                return hasSystemData && (
+                  isReconciled || 
+                  pair.status === 'matched' || 
+                  pair.status === 'suggested' || 
+                  pair.status === 'transfer' ||
+                  pair.status === 'conciliado' ||
+                  pair.status === 'sugerido' ||
+                  pair.status === 'transferencia'
+                );
+              })()
+            });
+          }
+          
           return null;
         })()}
         
@@ -3360,38 +3431,134 @@ function ReconciliationCard({
           </div>
         )}
         {/* Se há correspondência, mostrar dados do lançamento */}
-        {((pair.status === 'matched' || pair.status === 'conciliado' || 
-          pair.status === 'suggested' || pair.status === 'sugerido' ||
-          pair.status === 'transfer' || pair.status === 'transferencia') && pair.systemTransaction) ? (
+        {(() => {
+          const isReconciled = isTransactionReconciled(pair);
+          const hasSystemData = !!pair.systemTransaction;
+          const hasSystemTransactions = !!pair.systemTransactions && pair.systemTransactions.length > 0;
+          
+          // ✅ CORREÇÃO SIMPLIFICADA: Se conciliado, SEMPRE mostrar dados do sistema
+          // Para outros status, verificar se há dados disponíveis
+          const shouldShowSystemData = isReconciled ? 
+            (hasSystemData || hasSystemTransactions) : 
+            (hasSystemData || hasSystemTransactions) && (
+              pair.status === 'matched' || 
+              pair.status === 'suggested' || 
+              pair.status === 'transfer' ||
+              pair.status === 'conciliado' ||
+              pair.status === 'sugerido' ||
+              pair.status === 'transferencia'
+            );
+          
+          console.log('🔍 DEBUG Renderização Sistema (SIMPLIFICADO):', {
+            pairId: pair.id,
+            status: pair.status,
+            bankStatus: pair.bankTransaction?.status_conciliacao,
+            isReconciled,
+            hasSystemData,
+            hasSystemTransactions,
+            shouldShowSystemData,
+            systemTransactionId: pair.systemTransaction?.id,
+            systemTransactionDesc: pair.systemTransaction?.descricao,
+            systemTransactionValue: pair.systemTransaction?.valor,
+            systemTransactionsCount: pair.systemTransactions?.length,
+            // 🎯 INFORMAÇÃO CRUCIAL: Como os dados estão estruturados?
+            rawSystemTransaction: pair.systemTransaction,
+            rawSystemTransactions: pair.systemTransactions
+          });
+          
+          return shouldShowSystemData;
+        })() ? (
           <div className="flex items-start gap-3">
             <input type="checkbox" className="mt-1" />
             <div className="flex-1">
-              <div className="text-sm text-gray-700 mb-1">
-                {formatDate(pair.systemTransaction.data_lancamento)}
-              </div>
-              <div className={`font-bold text-lg mb-2 ${
-                pair.systemTransaction.tipo === 'receita' 
-                  ? 'text-green-600' 
-                  : 'text-red-600'
-              }`}>
-                {formatCurrency(pair.systemTransaction.valor)}
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-gray-700">
-                  {pair.systemTransaction.descricao || 'Sem descrição'}
-                </p>
-                <div className="flex items-center gap-2">
-                  <p className="text-xs text-gray-500">
-                    Origem: sistema
-                  </p>
-                  {/* Badge de transferência para Sistema */}
-                  {isTransferSystem(pair.systemTransaction) && (
-                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">
-                      TRANSFERÊNCIA
-                    </span>
-                  )}
-                </div>
-              </div>
+              {/* ✅ CORREÇÃO: Suportar tanto systemTransaction quanto systemTransactions */}
+              {(() => {
+                const hasMultiple = pair.systemTransactions && pair.systemTransactions.length > 1;
+                const singleTransaction = pair.systemTransaction;
+                const multipleTransactions = pair.systemTransactions;
+                
+                if (hasMultiple && multipleTransactions) {
+                  // Múltiplos lançamentos
+                  const totalValue = multipleTransactions.reduce((sum, t) => sum + Math.abs(t.valor), 0);
+                  const firstDate = multipleTransactions[0]?.data_lancamento;
+                  const firstType = multipleTransactions[0]?.tipo;
+                  
+                  return (
+                    <>
+                      <div className="text-sm text-gray-700 mb-1">
+                        {firstDate ? formatDate(firstDate) : ''}
+                      </div>
+                      <div className={`font-bold text-lg mb-2 ${
+                        firstType === 'receita' ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {formatCurrency(totalValue)}
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm text-gray-700">
+                          {multipleTransactions.length} lançamentos selecionados
+                        </p>
+                        
+                        {/* Badge para múltiplos lançamentos */}
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">
+                            {multipleTransactions.length} lançamentos
+                          </span>
+                          <button className="flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full hover:bg-gray-200">
+                            👁️ ver detalhes
+                          </button>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-gray-500">
+                            Origem: sistema
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  );
+                } else if (singleTransaction) {
+                  // Lançamento único
+                  return (
+                    <>
+                      <div className="text-sm text-gray-700 mb-1">
+                        {formatDate(singleTransaction.data_lancamento)}
+                      </div>
+                      <div className={`font-bold text-lg mb-2 ${
+                        singleTransaction.tipo === 'receita' 
+                          ? 'text-green-600' 
+                          : 'text-red-600'
+                      }`}>
+                        {formatCurrency(singleTransaction.valor)}
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm text-gray-700">
+                          {singleTransaction.descricao || 'Sem descrição'}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-gray-500">
+                            Origem: sistema
+                          </p>
+                          {/* Badge de transferência para Sistema */}
+                          {isTransferSystem(singleTransaction) && (
+                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">
+                              TRANSFERÊNCIA
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  );
+                } else {
+                  // Fallback - não deveria chegar aqui se a lógica acima estiver correta
+                  return (
+                    <div className="space-y-1">
+                      <p className="text-sm text-gray-500 italic">
+                        Dados do sistema não disponíveis
+                      </p>
+                    </div>
+                  );
+                }
+              })()}
             </div>
           </div>
         ) : (

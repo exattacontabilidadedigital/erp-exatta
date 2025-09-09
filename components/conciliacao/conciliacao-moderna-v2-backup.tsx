@@ -29,7 +29,8 @@ import {
   TrendingDown,
   FileText,
   Calendar,
-  Banknote
+  Banknote,
+  Eye
 } from "lucide-react";
 import { useToast } from "@/contexts/toast-context";
 import { useAuth } from "@/contexts/auth-context";
@@ -468,7 +469,18 @@ export function ConciliacaoModernaV2({ className, preSelectedBankAccountId, preS
           const status = pair.bankTransaction?.status_conciliacao || 'undefined';
           acc[status] = (acc[status] || 0) + 1;
           return acc;
-        }, {})
+        }, {}),
+        // ✅ NOVO: Debug específico para múltiplos lançamentos
+        multipleTransactionsPairs: data.pairs?.filter((pair: any) => 
+          pair.systemTransactions && pair.systemTransactions.length > 1
+        ).map((pair: any) => ({
+          bankTransactionId: pair.bankTransaction?.id,
+          bankAmount: pair.bankTransaction?.amount,
+          systemTransactionsCount: pair.systemTransactions?.length,
+          systemTransactionsTotal: pair.systemTransactions?.reduce((sum: number, t: any) => sum + Math.abs(t.valor), 0),
+          pairStatus: pair.status,
+          bankStatus: pair.bankTransaction?.status_conciliacao
+        }))
       });
       
       // ✅ CORREÇÃO CRÍTICA: SEMPRE usar dados diretamente da API (estado real do banco)
@@ -3168,6 +3180,61 @@ function ReconciliationCard({
   onProcessReconciliationDecision: (pair: ReconciliationPair, action: string, details?: any) => void;
   isValidTransfer: (bankTransaction: BankTransaction | undefined, systemTransaction: SystemTransaction | undefined) => boolean;
 }) {
+  // ✅ DETECTAR múltiplos lançamentos
+  const hasMultipleTransactions = pair.systemTransactions && pair.systemTransactions.length > 1;
+  const systemData = hasMultipleTransactions && pair.systemTransactions ? {
+    totalValue: pair.systemTransactions.reduce((sum, t) => sum + Math.abs(t.valor), 0),
+    totalCount: pair.systemTransactions.length,
+    combinedDescription: pair.systemTransactions.map(t => t.descricao).join(' | '),
+    transactions: pair.systemTransactions,
+    dateRange: {
+      earliest: pair.systemTransactions.reduce((min, t) => 
+        t.data_lancamento < min ? t.data_lancamento : min, 
+        pair.systemTransactions[0].data_lancamento
+      ),
+      latest: pair.systemTransactions.reduce((max, t) => 
+        t.data_lancamento > max ? t.data_lancamento : max, 
+        pair.systemTransactions[0].data_lancamento
+      )
+    }
+  } : null;
+
+  // ✅ USAR dados agregados OU dados únicos
+  const displayData = hasMultipleTransactions ? systemData : pair.systemTransaction;
+  
+  // ✅ DEBUG: Log específico para cards conciliados com múltiplos lançamentos
+  if (pair.status === 'conciliado' && hasMultipleTransactions) {
+    console.log('🔍 DEBUG CARD CONCILIADO COM MÚLTIPLOS:', {
+      bankTransactionId: pair.bankTransaction?.id,
+      bankAmount: pair.bankTransaction?.amount,
+      pairStatus: pair.status,
+      hasMultipleTransactions,
+      systemTransactionsCount: pair.systemTransactions?.length,
+      systemDataTotalValue: systemData?.totalValue,
+      systemTransactionSingleValue: pair.systemTransaction?.valor,
+      shouldShowMultiple: hasMultipleTransactions && systemData
+    });
+  }
+
+  // ✅ DEBUG: Log para qualquer card conciliado para investigar dados ausentes
+  if (pair.status === 'conciliado') {
+    console.log('🔍 DEBUG CARD CONCILIADO:', {
+      pairId: pair.id,
+      status: pair.status,
+      hasSystemTransaction: !!pair.systemTransaction,
+      systemTransactionData: pair.systemTransaction ? {
+        id: pair.systemTransaction.id,
+        valor: pair.systemTransaction.valor,
+        descricao: pair.systemTransaction.descricao
+      } : null,
+      hasMultipleTransactions,
+      systemTransactionsCount: pair.systemTransactions?.length,
+      willShowSystemData: ((pair.status === 'matched' || pair.status === 'conciliado' || 
+        pair.status === 'suggested' || pair.status === 'sugerido' ||
+        pair.status === 'transfer' || pair.status === 'transferencia') && 
+        (pair.systemTransaction || hasMultipleTransactions))
+    });
+  }
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'matched': return 'bg-green-100 text-green-800 border-green-200';
@@ -3570,37 +3637,154 @@ function ReconciliationCard({
           </div>
         )}
         {/* Se há correspondência, mostrar dados do lançamento */}
-        {((pair.status === 'matched' || pair.status === 'conciliado' || 
-          pair.status === 'suggested' || pair.status === 'sugerido' ||
-          pair.status === 'transfer' || pair.status === 'transferencia') && pair.systemTransaction) ? (
+        {(() => {
+          const shouldShowSystemData = ((pair.status === 'matched' || pair.status === 'conciliado' || 
+            pair.status === 'suggested' || pair.status === 'sugerido' ||
+            pair.status === 'transfer' || pair.status === 'transferencia') && 
+            (pair.systemTransaction || hasMultipleTransactions));
+          
+          console.log('🔍 DEBUG CONDIÇÃO RENDERIZAÇÃO LADO DIREITO:', {
+            pairId: pair.id,
+            status: pair.status,
+            hasSystemTransaction: !!pair.systemTransaction,
+            hasMultipleTransactions,
+            shouldShowSystemData,
+            systemTransactionData: pair.systemTransaction ? {
+              id: pair.systemTransaction.id,
+              valor: pair.systemTransaction.valor,
+              descricao: pair.systemTransaction.descricao
+            } : null
+          });
+          
+          return shouldShowSystemData;
+        })() ? (
           <div className="flex items-start gap-3">
             <input type="checkbox" className="mt-1" />
             <div className="flex-1">
+              {/* Data - range se múltiplo */}
               <div className="text-sm text-gray-700 mb-1">
-                {formatDate(pair.systemTransaction.data_lancamento)}
+                {hasMultipleTransactions && systemData ? (
+                  <span>
+                    {formatDate(systemData.dateRange.earliest)}
+                    {systemData.dateRange.earliest !== systemData.dateRange.latest && 
+                      ` até ${formatDate(systemData.dateRange.latest)}`
+                    }
+                  </span>
+                ) : (
+                  pair.systemTransaction && formatDate(pair.systemTransaction.data_lancamento)
+                )}
               </div>
+
+              {/* Valor Total Agregado */}
               <div className={`font-bold text-lg mb-2 ${
-                pair.systemTransaction.tipo === 'receita' 
-                  ? 'text-green-600' 
-                  : 'text-red-600'
+                hasMultipleTransactions && systemData ? (
+                  systemData.totalValue >= 0 ? 'text-green-600' : 'text-red-600'
+                ) : (
+                  pair.systemTransaction?.tipo === 'receita' ? 'text-green-600' : 'text-red-600'
+                )
               }`}>
-                {formatCurrency(pair.systemTransaction.valor)}
+                {hasMultipleTransactions && systemData ? (
+                  <>
+                    {formatCurrency(systemData.totalValue)}
+                    <span className="text-sm font-normal text-gray-500 ml-2">
+                      ({systemData.totalCount} lançamentos)
+                    </span>
+                  </>
+                ) : (
+                  pair.systemTransaction && formatCurrency(pair.systemTransaction.valor)
+                )}
               </div>
+
               <div className="space-y-1">
+                {/* Descrição */}
                 <p className="text-sm text-gray-700">
-                  {pair.systemTransaction.descricao || 'Sem descrição'}
+                  {hasMultipleTransactions && systemData ? (
+                    <span title={systemData.combinedDescription}>
+                      {systemData.combinedDescription.length > 50 
+                        ? `${systemData.combinedDescription.substring(0, 50)}...`
+                        : systemData.combinedDescription
+                      }
+                    </span>
+                  ) : (
+                    pair.systemTransaction?.descricao || 'Sem descrição'
+                  )}
                 </p>
+
+                {/* Badge para múltiplos lançamentos */}
+                {hasMultipleTransactions && systemData && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">
+                      {systemData.totalCount} LANÇAMENTOS
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      Total: {formatCurrency(systemData.totalValue)}
+                    </span>
+                  </div>
+                )}
+
+                {/* Lista expandível dos lançamentos individuais */}
+                {hasMultipleTransactions && systemData && (
+                  <details className="mt-2">
+                    <summary className="text-xs text-blue-600 cursor-pointer hover:text-blue-800 flex items-center gap-1">
+                      <Eye className="h-3 w-3" />
+                      Ver detalhes dos {systemData.totalCount} lançamentos
+                    </summary>
+                    <div className="mt-2 space-y-1 pl-4 border-l-2 border-blue-200 bg-blue-50 rounded p-2">
+                      {systemData.transactions.map((transaction, idx) => (
+                        <div key={transaction.id} className="text-xs text-gray-700 border-b border-blue-100 pb-1 last:border-b-0">
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium text-blue-800">
+                              {formatCurrency(transaction.valor)}
+                            </span>
+                            <span className="text-gray-500">
+                              {formatDate(transaction.data_lancamento)}
+                            </span>
+                          </div>
+                          <div className="text-gray-600 mt-1">
+                            {transaction.descricao}
+                          </div>
+                          {transaction.numero_documento && (
+                            <div className="text-gray-500 text-xs">
+                              Doc: {transaction.numero_documento}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+
                 <div className="flex items-center gap-2">
                   <p className="text-xs text-gray-500">
                     Origem: sistema
                   </p>
                   {/* Badge de transferência para Sistema */}
-                  {isTransferSystem(pair.systemTransaction) && (
-                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">
-                      TRANSFERÊNCIA
-                    </span>
+                  {hasMultipleTransactions && systemData ? (
+                    systemData.transactions.some(t => isTransferSystem(t)) && (
+                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">
+                        TRANSFERÊNCIA
+                      </span>
+                    )
+                  ) : (
+                    pair.systemTransaction && isTransferSystem(pair.systemTransaction) && (
+                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">
+                        TRANSFERÊNCIA
+                      </span>
+                    )
                   )}
                 </div>
+
+                {/* Validação de valor para múltiplos lançamentos */}
+                {hasMultipleTransactions && systemData && pair.bankTransaction && 
+                 Math.abs(pair.bankTransaction.amount - systemData.totalValue) > 0.01 && (
+                  <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                    <div className="text-xs text-yellow-800">
+                      ⚠️ Diferença: {formatCurrency(
+                        Math.abs(pair.bankTransaction.amount - systemData.totalValue)
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
