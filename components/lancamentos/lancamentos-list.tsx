@@ -108,7 +108,7 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
 
   // Função para contar colunas visíveis (para colspan)
   const getVisibleColumnsCount = (): number => {
-    if (!columns) return 11 // Total padrão de colunas
+    if (!columns) return 12 // Total padrão de colunas (incluindo status_conciliacao)
     return columns.filter(col => col.visible).length
   }
 
@@ -401,6 +401,25 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
       }
 
       console.log('Dados brutos do Supabase:', data)
+      
+      // Debug específico para status
+      if (data && data.length > 0) {
+        console.log('=== DEBUG STATUS DOS LANÇAMENTOS ===')
+        data.forEach((lancamento, index) => {
+          if (index < 5) { // Mostrar apenas os primeiros 5 para não poluir o console
+            console.log(`Lançamento ${index + 1}:`, {
+              id: lancamento.id,
+              numero_documento: lancamento.numero_documento,
+              descricao: lancamento.descricao,
+              status: lancamento.status,
+              data_pagamento: lancamento.data_pagamento,
+              valor_pago: lancamento.valor_pago,
+              tipo: lancamento.tipo
+            })
+          }
+        })
+        console.log(`Total de lançamentos carregados: ${data.length}`)
+      }
 
       if (!data) {
         console.log('Nenhum dado retornado do Supabase')
@@ -476,58 +495,107 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
     }
   }
 
-  const getTipoBadge = (tipo: string) => {
-    switch (tipo) {
+  const getTipoBadge = (lancamento: any) => {
+    // Verificar se é uma transferência baseado no número do documento
+    const isTransferenciaSaida = lancamento.numero_documento?.includes('-SAIDA') || 
+                                 lancamento.numero_documento?.startsWith('TRANSF-') && lancamento.tipo === 'despesa'
+    const isTransferenciaEntrada = lancamento.numero_documento?.includes('-ENTRADA') || 
+                                   lancamento.numero_documento?.startsWith('TRANSF-') && lancamento.tipo === 'receita'
+    
+    if (isTransferenciaSaida) {
+      return <Badge className="bg-red-100 text-red-800">
+        <span className="hidden sm:inline">Transferência</span>
+        <span className="sm:hidden">Transf.</span>
+      </Badge>
+    }
+    
+    if (isTransferenciaEntrada) {
+      return <Badge className="bg-green-100 text-green-800">
+        <span className="hidden sm:inline">Transferência</span>
+        <span className="sm:hidden">Transf.</span>
+      </Badge>
+    }
+    
+    // Tipos normais (não transferências)
+    switch (lancamento.tipo) {
       case "receita":
-        return <Badge className="bg-green-100 text-green-800">Receita</Badge>
+        return <Badge className="bg-green-100 text-green-800">
+          <span className="hidden sm:inline">Receita</span>
+          <span className="sm:hidden">Receita</span>
+        </Badge>
       case "despesa":
-        return <Badge className="bg-red-100 text-red-800">Despesa</Badge>
+        return <Badge className="bg-red-100 text-red-800">
+          <span className="hidden sm:inline">Despesa</span>
+          <span className="sm:hidden">Despesa</span>
+        </Badge>
       case "transferencia":
-        return <Badge className="bg-blue-100 text-blue-800">Transferência</Badge>
+        return <Badge className="bg-blue-100 text-blue-800">
+          <span className="hidden sm:inline">Transferência</span>
+          <span className="sm:hidden">Transferência</span>
+        </Badge>
       default:
         return null
     }
   }
 
   const getStatusConciliacaoBadge = (lancamento: any) => {
-    // Verificar se o lançamento está conciliado baseado em critérios realistas
-    const isTransferencia = lancamento.tipo === 'transferencia'
-    const isPago = lancamento.status === 'pago'
-    const hasDataPagamento = lancamento.data_pagamento
-    const hasContaBancaria = lancamento.conta_bancaria_id
-    const isRecent = lancamento.data_lancamento && 
-      new Date(lancamento.data_lancamento) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // últimos 30 dias
+    // Status de conciliação deve ser sempre "Não Conciliado" até que seja feita a conciliação manual
+    // TODO: Integrar com sistema de conciliação real quando implementado
     
-    if (isPago && hasDataPagamento && hasContaBancaria && !isTransferencia) {
-      // Lançamentos pagos com conta bancária têm alta probabilidade de estarem conciliados
-      return <Badge className="bg-green-100 text-green-800">
-        <span className="hidden sm:inline">Conciliado</span>
-        <span className="sm:hidden">✓</span>
-      </Badge>
-    } else if (isTransferencia && isPago) {
-      // Transferências pagas são consideradas conciliadas automaticamente
-      return <Badge className="bg-blue-100 text-blue-800">
-        <span className="hidden sm:inline">Conciliado (Auto)</span>
-        <span className="sm:hidden">⚡</span>
-      </Badge>
-    } else if (lancamento.status === 'pendente' && hasContaBancaria) {
-      // Pendentes com conta bancária podem ser conciliados parcialmente
-      return <Badge className="bg-yellow-100 text-yellow-800">
-        <span className="hidden sm:inline">Pendente Conciliação</span>
-        <span className="sm:hidden">⏳</span>
-      </Badge>
-    } else if (!hasContaBancaria) {
-      // Sem conta bancária não pode ser conciliado
-      return <Badge variant="secondary">
-        <span className="hidden sm:inline">Não Aplicável</span>
-        <span className="sm:hidden">-</span>
-      </Badge>
-    } else {
-      // Não conciliado
-      return <Badge className="bg-red-100 text-red-800">
-        <span className="hidden sm:inline">Não Conciliado</span>
-        <span className="sm:hidden">✗</span>
-      </Badge>
+    // Verificar se existe um campo status_conciliacao na base de dados
+    if (lancamento.status_conciliacao) {
+      switch (lancamento.status_conciliacao) {
+        case 'conciliado':
+          return <Badge className="bg-green-100 text-green-800">
+            <span className="hidden sm:inline">Conciliado</span>
+            <span className="sm:hidden">✓</span>
+          </Badge>
+        case 'ignorado':
+          return <Badge variant="secondary">
+            <span className="hidden sm:inline">Ignorado</span>
+            <span className="sm:hidden">-</span>
+          </Badge>
+        default:
+          return <Badge className="bg-red-100 text-red-800">
+            <span className="hidden sm:inline">Não Conciliado</span>
+            <span className="sm:hidden">✗</span>
+          </Badge>
+      }
+    }
+    
+    // Por padrão, todos os lançamentos começam como "Não Conciliado"
+    return <Badge className="bg-red-100 text-red-800">
+      <span className="hidden sm:inline">Não Conciliado</span>
+      <span className="sm:hidden">✗</span>
+    </Badge>
+  }
+
+  // Função para obter a cor do valor baseado no tipo de lançamento
+  const getValorColorClass = (lancamento: any) => {
+    // Verificar se é uma transferência baseado no número do documento
+    const isTransferenciaSaida = lancamento.numero_documento?.includes('-SAIDA') || 
+                                 lancamento.numero_documento?.startsWith('TRANSF-') && lancamento.tipo === 'despesa'
+    const isTransferenciaEntrada = lancamento.numero_documento?.includes('-ENTRADA') || 
+                                   lancamento.numero_documento?.startsWith('TRANSF-') && lancamento.tipo === 'receita'
+    
+    if (isTransferenciaSaida) {
+      return 'text-red-600 font-semibold'   // Vermelho para transferência (saída)
+    }
+    
+    if (isTransferenciaEntrada) {
+      return 'text-green-600 font-semibold' // Verde para transferência (entrada)
+    }
+    
+    // Tipos normais (não transferências)
+    switch (lancamento.tipo) {
+      case 'receita':
+        return 'text-green-600 font-semibold' // Verde para receitas
+      case 'despesa':
+        return 'text-red-600 font-semibold'   // Vermelho para despesas
+      case 'transferencia':
+        return 'text-blue-600 font-semibold'  // Azul para transferências (fallback)
+      default:
+        return 'text-gray-900 font-medium'    // Cor padrão
     }
   }
 
@@ -721,7 +789,7 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
                           </span>
                         </TableCell>
                       )}
-                      {isColumnVisible('tipo') && <TableCell className="text-xs sm:text-sm">{getTipoBadge(lancamento.tipo)}</TableCell>}
+                      {isColumnVisible('tipo') && <TableCell className="text-xs sm:text-sm">{getTipoBadge(lancamento)}</TableCell>}
                       {isColumnVisible('numero_documento') && (
                         <TableCell className="max-w-[80px] sm:max-w-xs truncate text-xs sm:text-sm">
                           {lancamento.numero_documento}
@@ -754,12 +822,12 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
                       )}
                       {isColumnVisible('valor') && (
                         <TableCell className="text-right font-medium text-xs sm:text-sm">
-                          <span className="hidden sm:inline">
+                          <span className={`hidden sm:inline ${getValorColorClass(lancamento)}`}>
                             R$ {lancamento.valor.toLocaleString('pt-BR', { 
                               minimumFractionDigits: 2 
                             })}
                           </span>
-                          <span className="sm:hidden">
+                          <span className={`sm:hidden ${getValorColorClass(lancamento)}`}>
                             R$ {(lancamento.valor / 1000).toFixed(0)}k
                           </span>
                         </TableCell>
@@ -901,7 +969,7 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
               {filteredLancamentos.map((lancamento) => (
                 <TableRow key={lancamento.id}>
                   <TableCell>{lancamento.data ? new Date(lancamento.data).toLocaleDateString() : ""}</TableCell>
-                  <TableCell>{getTipoBadge(lancamento.tipo)}</TableCell>
+                  <TableCell>{getTipoBadge(lancamento)}</TableCell>
                   <TableCell>{lancamento.numero_documento}</TableCell>
                   <TableCell className="text-sm">
                     {lancamento.plano_contas ? `${lancamento.plano_contas.codigo} - ${lancamento.plano_contas.nome}` : "-"}
@@ -919,9 +987,8 @@ export function LancamentosList({ onVisualizar, onEditar, onExcluir, refresh, sh
                     }
                   </TableCell>
                   <TableCell>
-                    <span className={lancamento.tipo === "despesa" ? "text-red-600" : "text-green-600"}>
-                      {lancamento.tipo === "despesa" ? "-" : "+"}R${" "}
-                      {Number.parseFloat(lancamento.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                    <span className={getValorColorClass(lancamento)}>
+                      R$ {Number.parseFloat(lancamento.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                     </span>
                   </TableCell>
                   <TableCell>{getStatusBadge(lancamento.status)}</TableCell>
