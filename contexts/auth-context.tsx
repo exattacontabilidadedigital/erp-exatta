@@ -112,14 +112,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const getInitialSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-      setUser(session?.user ?? null)
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        setUser(session?.user ?? null)
 
-      if (session?.user) {
-        await loadUserData(session.user.id)
-      } else {
+        if (session?.user) {
+          await loadUserData(session.user.id)
+        } else {
+          setLoading(false)
+        }
+      } catch (error) {
+        console.error("Erro ao obter sessão inicial:", error)
         setLoading(false)
       }
     }
@@ -129,6 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("Auth state changed:", event, session?.user?.id)
       setUser(session?.user ?? null)
 
       if (session?.user) {
@@ -141,7 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [loadUserData])
 
   const signOut = async () => {
   await supabase.auth.signOut()

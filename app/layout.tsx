@@ -28,6 +28,12 @@ html {
   --font-sans: ${GeistSans.variable};
   --font-mono: ${GeistMono.variable};
 }
+body, * {
+  font-family: ${GeistSans.style.fontFamily}, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+.font-mono, code, pre, kbd, samp {
+  font-family: ${GeistMono.style.fontFamily}, ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, monospace !important;
+}
         `}</style>
       </head>
       <body>

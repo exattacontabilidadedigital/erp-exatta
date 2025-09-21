@@ -70,6 +70,7 @@ export function PlanoContaSelect({
       if (error) {
         console.error('Erro ao buscar plano de contas:', error)
         setContas([])
+        setLoading(false)
         return
       }
 
@@ -81,18 +82,39 @@ export function PlanoContaSelect({
         ativo: conta.ativo || false
       })) || []
 
+      // Se não houver filtro de tipo, mostrar todas as contas analíticas
+      // Se houver filtro e não trouxer resultados, mostrar todas as contas analíticas
+      let contasFinais = contasFormatadas;
+      
+      if (contasFormatadas.length === 0 && tipoFiltro) {
+        // Se não encontrou contas com o filtro, buscar todas
+        const { data: todasContas } = await supabase
+          .from('plano_contas')
+          .select('id, codigo, nome, tipo, ativo')
+          .eq('empresa_id', userData.empresa_id)
+          .eq('ativo', true)
+          .order('codigo')
+        
+        contasFinais = todasContas?.map((conta: any) => ({
+          id: conta.id,
+          codigo: conta.codigo || '',
+          nome: conta.nome || 'Conta não identificada',
+          tipo: conta.tipo || 'Não especificado',
+          ativo: conta.ativo || false
+        })) || []
+      }
+
       // Filtrar apenas contas analíticas (que recebem lançamentos)
-      // Contas analíticas geralmente têm códigos com mais segmentos (ex: 4.1.01.001)
-      const contasAnaliticas = contasFormatadas.filter(conta => {
+      const contasAnaliticas = contasFinais.filter(conta => {
         const segmentos = conta.codigo.split('.')
-        return segmentos.length >= 3 // Contas de 3 níveis ou mais podem receber lançamentos
+        return segmentos.length >= 2 // Relaxar o filtro para contas de 2 níveis ou mais
       })
 
       setContas(contasAnaliticas)
+      setLoading(false)
     } catch (error) {
       console.error('Erro ao buscar plano de contas:', error)
       setContas([])
-    } finally {
       setLoading(false)
     }
   }

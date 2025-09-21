@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Eye, EyeOff, Mail, Lock } from "lucide-react"
 import Link from "next/link"
-import { supabase } from "@/lib/supabase/client"
+import { supabase, isSupabaseConfigured } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/contexts/toast-context"
 
@@ -25,13 +25,13 @@ export function LoginForm() {
   const router = useRouter()
   const { toast } = useToast()
 
-  // Carregar email salvo quando a página carregar
+  // Carregar dados salvos do "Lembrar de mim"
   useEffect(() => {
-    const rememberedEmail = localStorage.getItem('rememberedEmail')
     const rememberMe = localStorage.getItem('rememberMe')
+    const rememberedEmail = localStorage.getItem('rememberedEmail')
     
-    if (rememberedEmail && rememberMe === 'true') {
-      setFormData(prev => ({
+    if (rememberMe === 'true' && rememberedEmail) {
+      setFormData((prev) => ({
         ...prev,
         email: rememberedEmail,
         rememberMe: true
@@ -39,61 +39,136 @@ export function LoginForm() {
     }
   }, [])
 
+  // Função para verificar conectividade (simplificada)
+  const checkConnectivity = async (): Promise<boolean> => {
+    // Verificar se está online
+    if (!navigator.onLine) {
+      console.log("❌ Navigator indica que está offline")
+      toast({
+        title: "Sem conexão com a internet",
+        description: "Verifique sua conexão e tente novamente.",
+        variant: "destructive",
+      })
+      return false
+    }
+
+    console.log("✅ Navigator indica que está online")
+    return true
+  }
+
+  // Função para realizar login com retry
+  const attemptLogin = async (email: string, password: string, retryCount = 0): Promise<any> => {
+    const maxRetries = 2
+    const backoffDelay = Math.pow(2, retryCount) * 1000 // 1s, 2s
+
+    try {
+      console.log(`🔄 Tentativa de login ${retryCount + 1}/${maxRetries + 1} para:`, email)
+      
+      const result = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      console.log(`✅ Resposta recebida do Supabase na tentativa ${retryCount + 1}`)
+      return result
+    } catch (error: any) {
+      // Verificar se é um erro de rede e tentar novamente
+      if ((error.message.includes('NetworkError') || 
+           error.message.includes('Failed to fetch') ||
+           error.code === 'NETWORK_ERROR') && retryCount < maxRetries) {
+        console.log(`⚠️ Erro de rede detectado. Tentando novamente em ${backoffDelay}ms...`)
+        
+        // Mostrar feedback melhorado ao usuário sobre a tentativa
+        toast({
+          title: `Tentativa ${retryCount + 2}/${maxRetries + 1}`,
+          description: `Problema de conexão detectado. Tentando novamente em ${backoffDelay/1000}s...`,
+          variant: "default",
+        })
+        
+        await new Promise(resolve => setTimeout(resolve, backoffDelay))
+        return attemptLogin(email, password, retryCount + 1)
+      }
+      throw error
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
 
-    // Validações básicas
-    if (!formData.email.trim()) {
+    // Timeout de segurança absoluto para evitar loading infinito
+    const safetyTimeout = setTimeout(() => {
+      console.log("🚨 Timeout de segurança ativado - forçando desativação do loading")
+      setIsLoading(false)
       toast({
-        title: "Email obrigatório",
-        description: "Digite seu email para continuar.",
+        title: "Timeout de segurança",
+        description: "A operação demorou muito. Tente novamente.",
         variant: "destructive",
       })
-      setIsLoading(false)
-      return
-    }
-
-    if (!formData.password.trim()) {
-      toast({
-        title: "Senha obrigatória",
-        description: "Digite sua senha para continuar.",
-        variant: "destructive",
-      })
-      setIsLoading(false)
-      return
-    }
-
-    // Validação de formato de email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(formData.email)) {
-      toast({
-        title: "Formato de email inválido",
-        description: "Digite um email válido (exemplo: usuario@empresa.com).",
-        variant: "destructive",
-      })
-      setIsLoading(false)
-      return
-    }
+    }, 30000)
 
     try {
-      console.log("Tentando fazer login com:", formData.email)
+      // Verificar se o Supabase está configurado
+      if (!isSupabaseConfigured) {
+        console.log("❌ Supabase não está configurado")
+        toast({
+          title: "Erro de configuração",
+          description: "Sistema não está configurado corretamente. Entre em contato com o suporte.",
+          variant: "destructive",
+        })
+        return
+      }
 
-      // Timeout para evitar travamento
-      const loginPromise = supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
-      })
+      console.log("✅ Supabase configurado")
+      
+      // Validações básicas
+      if (!formData.email.trim()) {
+        toast({
+          title: "Email obrigatório",
+          description: "Digite seu email para continuar.",
+          variant: "destructive",
+        })
+        return
+      }
 
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout: Login demorou muito para responder')), 10000)
-      )
+      if (!formData.password.trim()) {
+        toast({
+          title: "Senha obrigatória",
+          description: "Digite sua senha para continuar.",
+          variant: "destructive",
+        })
+        return
+      }
 
-      const { data, error } = await Promise.race([loginPromise, timeoutPromise]) as any
+      // Validação de formato de email
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(formData.email)) {
+        toast({
+          title: "Formato de email inválido",
+          description: "Digite um email válido (exemplo: usuario@empresa.com).",
+          variant: "destructive",
+        })
+        return
+      }
 
-      console.log("Resposta do Supabase Auth:", { data, error })
-      console.log("User:", data?.user)
-      console.log("Session:", data?.session)
+      console.log("✅ Validações básicas concluídas")
+      console.log("📡 Verificando conectividade...")
+      
+      // Verificar conectividade antes de tentar login
+      const isConnected = await checkConnectivity()
+      if (!isConnected) {
+        console.log("❌ Falha na verificação de conectividade")
+        return
+      }
+
+      console.log("✅ Conectividade verificada")
+      console.log("🚀 Iniciando processo de login para:", formData.email)
+
+      const { data, error } = await attemptLogin(formData.email, formData.password)
+
+      console.log("📋 Resposta do Supabase Auth:", { data, error })
+      console.log("👤 User:", data?.user)
+      console.log("🔐 Session:", data?.session)
 
       if (error) {
         console.error("Erro de autenticação:", error)
@@ -131,7 +206,6 @@ export function LoginForm() {
           description: errorDescription,
           variant: "destructive",
         })
-        setIsLoading(false)
         return
       }
 
@@ -167,7 +241,6 @@ export function LoginForm() {
           description: "Resposta inválida do servidor.",
           variant: "destructive",
         })
-        setIsLoading(false)
       }
     } catch (error: any) {
       console.error("Erro inesperado ao fazer login:", error)
@@ -175,15 +248,18 @@ export function LoginForm() {
       let errorTitle = "Erro inesperado"
       let errorDescription = "Falha ao fazer login. Tente novamente."
       
-      if (error.message.includes("Timeout")) {
-        errorTitle = "Timeout de conexão"
-        errorDescription = "A conexão demorou muito para responder. Verifique sua internet e tente novamente."
+      if (error.message.includes("NetworkError") || error.message.includes("Failed to fetch") || error.message.includes("404")) {
+        errorTitle = "Serviço indisponível"
+        errorDescription = "O servidor de autenticação está temporariamente indisponível. Possíveis causas:\n\n🔧 Manutenção do servidor\n🌐 Problema de conectividade\n⚙️ Configuração do sistema\n\nTente novamente em alguns minutos ou entre em contato com o suporte."
       } else if (error.message.includes("Network")) {
         errorTitle = "Erro de conexão"
-        errorDescription = "Problema de conexão com o servidor. Verifique sua internet e tente novamente."
+        errorDescription = "Problema de conexão com o servidor. Verifique:\n• Sua conexão com a internet\n• Se o servidor está funcionando\n• Tente novamente em alguns momentos"
       } else if (error.message.includes("fetch")) {
         errorTitle = "Erro de rede"
-        errorDescription = "Não foi possível conectar ao servidor. Verifique sua conexão."
+        errorDescription = "Não foi possível conectar ao servidor. Verifique:\n• Sua conexão com a internet\n• Se não há bloqueios de firewall\n• Tente recarregar a página"
+      } else if (error.name === "AbortError") {
+        errorTitle = "Operação cancelada"
+        errorDescription = "A operação foi cancelada. Tente fazer login novamente."
       }
       
       toast({
@@ -191,6 +267,11 @@ export function LoginForm() {
         description: errorDescription,
         variant: "destructive",
       })
+    } finally {
+      // Limpar o timeout de segurança
+      clearTimeout(safetyTimeout)
+      // Garantir que o loading sempre seja desativado
+      console.log("🔄 Finalizando processo de login - desativando loading")
       setIsLoading(false)
     }
   }

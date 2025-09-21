@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -38,6 +38,7 @@ interface Lancamento {
   forma_pagamento_id: string
   descricao: string
   status: string
+  status_conciliacao?: string // Status de conciliação: pendente, conciliado, ignorado
   // Novos campos para condição de recebimento
   data_vencimento?: Date
   recebimento_realizado?: boolean
@@ -47,6 +48,63 @@ interface Lancamento {
   desconto?: number
   valor_pago?: number
   valor_original?: number // Valor original da operação
+}
+
+// Funções de persistência de dados
+const FORM_STORAGE_KEY = 'lancamentos-form-data'
+
+interface FormStorageData {
+  formData: any
+  date: string | null
+  vencimentoDate: string | null
+  dataPagamentoDate: string | null
+  timestamp: number
+}
+
+const saveFormDataToStorage = (formData: any, date: Date | undefined, vencimentoDate: Date | undefined, dataPagamentoDate: Date | undefined) => {
+  try {
+    const storageData: FormStorageData = {
+      formData,
+      date: date?.toISOString() || null,
+      vencimentoDate: vencimentoDate?.toISOString() || null,
+      dataPagamentoDate: dataPagamentoDate?.toISOString() || null,
+      timestamp: Date.now()
+    }
+    localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(storageData))
+    console.log('Dados do formulário salvos no localStorage:', storageData)
+  } catch (error) {
+    console.warn('Erro ao salvar dados no localStorage:', error)
+  }
+}
+
+const loadFormDataFromStorage = (): FormStorageData | null => {
+  try {
+    const stored = localStorage.getItem(FORM_STORAGE_KEY)
+    if (stored) {
+      const data = JSON.parse(stored) as FormStorageData
+      // Verificar se os dados não são muito antigos (1 hora = 3600000ms)
+      if (Date.now() - data.timestamp < 3600000) {
+        console.log('Dados do formulário carregados do localStorage:', data)
+        return data
+      } else {
+        // Remover dados antigos
+        localStorage.removeItem(FORM_STORAGE_KEY)
+        console.log('Dados do localStorage removidos por serem antigos')
+      }
+    }
+  } catch (error) {
+    console.warn('Erro ao carregar dados do localStorage:', error)
+  }
+  return null
+}
+
+const clearFormDataStorage = () => {
+  try {
+    localStorage.removeItem(FORM_STORAGE_KEY)
+    console.log('Dados do formulário removidos do localStorage')
+  } catch (error) {
+    console.warn('Erro ao limpar dados do localStorage:', error)
+  }
 }
 
 interface LancamentosFormProps {
@@ -90,8 +148,15 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
+  // Referências para controle de carregamento e estado
+  const dataLoadedRef = useRef(false)
+  const isInitializedRef = useRef(false)
+  const hasUnsavedChangesRef = useRef(false)
+  const lastSavedTimestampRef = useRef<number>(0)
+
   useEffect(() => {
-    if (userData?.empresa_id) {
+    if (userData?.empresa_id && !dataLoadedRef.current) {
+      dataLoadedRef.current = true
       fetchOptions()
     }
   }, [userData?.empresa_id])
@@ -148,6 +213,77 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
     }
   }, [initialData])
 
+  // Carregar dados do localStorage quando componente monta (apenas se não é edição)
+  useEffect(() => {
+    if (!isEditing && !initialData && !isInitializedRef.current) {
+      isInitializedRef.current = true
+      const storedData = loadFormDataFromStorage()
+      
+      if (storedData) {
+        console.log('Restaurando dados do localStorage:', storedData)
+        setFormData(storedData.formData)
+        
+        if (storedData.date) {
+          setDate(new Date(storedData.date))
+        }
+        if (storedData.vencimentoDate) {
+          setVencimentoDate(new Date(storedData.vencimentoDate))
+        }
+        if (storedData.dataPagamentoDate) {
+          setDataPagamentoDate(new Date(storedData.dataPagamentoDate))
+        }
+        
+        toast({
+          title: "Dados restaurados",
+          description: "Formulário restaurado automaticamente.",
+          variant: "default"
+        })
+      }
+    }
+  }, [isEditing, initialData, toast])
+
+  // Salvar dados automaticamente quando o formulário muda
+  useEffect(() => {
+    if (!isEditing && isInitializedRef.current) {
+      const timeoutId = setTimeout(() => {
+        saveFormDataToStorage(formData, date, vencimentoDate, dataPagamentoDate)
+        hasUnsavedChangesRef.current = true
+        lastSavedTimestampRef.current = Date.now()
+      }, 1000) // Salvar após 1 segundo de inatividade
+
+      return () => clearTimeout(timeoutId)
+    }
+  }, [formData, date, vencimentoDate, dataPagamentoDate, isEditing])
+
+  // Listener para detectar mudança de visibilidade da página
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && !isEditing) {
+        // Página ficou oculta, salvar dados imediatamente
+        console.log('Página ficou oculta - salvando dados automaticamente')
+        saveFormDataToStorage(formData, date, vencimentoDate, dataPagamentoDate)
+      } else if (document.visibilityState === 'visible' && dataLoadedRef.current) {
+        // Página voltou ao foco, manter dados existentes
+        console.log('Página voltou ao foco - mantendo dados existentes')
+      }
+    }
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChangesRef.current && !isEditing) {
+        // Salvar antes de sair
+        saveFormDataToStorage(formData, date, vencimentoDate, dataPagamentoDate)
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [formData, date, vencimentoDate, dataPagamentoDate, isEditing])
+
   // Função para calcular valor pago/recebido
   const calcularValorPago = () => {
     if (formData.valor) {
@@ -168,27 +304,60 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
       return
     }
 
+    // Verificar se já está carregando para evitar múltiplas chamadas
+    if (loading && formasPagamento.length > 0) {
+      console.log('Dados já carregados, pulando nova busca')
+      return
+    }
+
     console.log('Iniciando busca de formas de pagamento para empresa:', userData.empresa_id)
     setLoading(true)
     
     try {
-      // Buscar formas de pagamento (único campo que ainda usa Select tradicional)
-      const { data: formas, error: formasError } = await supabase
+      // Buscar formas de pagamento com timeout para evitar travamentos
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout na busca de dados')), 10000)
+      )
+      
+      const dataPromise = supabase
         .from('formas_pagamento')
         .select('id, nome')
         .eq('empresa_id', userData.empresa_id)
         .eq('ativo', true)
         .order('nome')
 
+      const { data: formas, error: formasError } = await Promise.race([
+        dataPromise,
+        timeoutPromise
+      ]) as any
+
       if (formasError) {
         console.error('Erro ao buscar formas de pagamento:', formasError)
+        
+        // Se já temos dados em cache, usar eles
+        if (formasPagamento.length > 0) {
+          console.log('Usando dados em cache devido ao erro')
+          setLoading(false)
+          return
+        }
       }
 
       console.log('Formas de pagamento carregadas:', formas)
       setFormasPagamento(formas || [])
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao carregar opções:', error)
-      setFormasPagamento([])
+      
+      // Se for timeout e temos dados em cache, usar eles
+      if (error.message === 'Timeout na busca de dados' && formasPagamento.length > 0) {
+        console.log('Timeout detectado, usando dados em cache')
+        toast({
+          title: "Carregamento lento",
+          description: "Usando dados salvos localmente.",
+          variant: "default"
+        })
+      } else {
+        setFormasPagamento([])
+      }
     } finally {
       setLoading(false)
     }
@@ -464,11 +633,20 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
+    console.log("🚀 HANDLESUBMIT INICIADO 🚀")
+    console.log("Event:", e)
+    console.log("FormData atual:", formData)
+    console.log("Saving state:", saving)
+    
     e.preventDefault()
     
     // Prevenir múltiplos cliques
-    if (saving) return
+    if (saving) {
+      console.log("❌ SALVAMENTO JÁ EM PROGRESSO - RETORNANDO")
+      return
+    }
     
+    console.log("✅ SETANDO SAVING = TRUE")
     setSaving(true)
     
     // Validações mais robustas
@@ -610,6 +788,9 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
       console.log("Tipo:", formData.tipo)
       console.log("UserData:", userData)
       console.log("FormData completo:", formData)
+      
+      // Declarar status calculado no início para ser acessível em todo o escopo
+      let calculatedStatus = "pendente"
       
       devLog("Iniciando salvamento do lançamento", { formData, date, userData }, 'showSaveProcess')
       
@@ -818,6 +999,27 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
         valorPrincipal = parseFloat(formData.valor_pago)
       }
 
+      // Calcular status automaticamente baseado nos campos preenchidos
+      // Se é transferência, sempre é pago
+      if (formData.tipo === "transferencia") {
+        calculatedStatus = "pago"
+      } 
+      // Se tem data de pagamento E valor pago preenchidos, é pago
+      else if (dataPagamentoDate && formData.valor_pago && parseFloat(formData.valor_pago) > 0) {
+        calculatedStatus = "pago"
+      }
+      // Se não tem data de pagamento mas tem valor pago maior que 0, é pago
+      else if (!dataPagamentoDate && formData.valor_pago && parseFloat(formData.valor_pago) > 0) {
+        calculatedStatus = "pago"
+      }
+      
+      console.log("=== CÁLCULO DE STATUS ===")
+      console.log("Tipo:", formData.tipo)
+      console.log("Data pagamento:", dataPagamentoDate)
+      console.log("Valor pago:", formData.valor_pago)
+      console.log("Status calculado:", calculatedStatus)
+      console.log("Status no form:", formData.status)
+
       const lancamentoData = {
         tipo: formData.tipo,
         numero_documento: formData.numero_documento || null,
@@ -831,7 +1033,7 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
         forma_pagamento_id: formData.forma_pagamento_id === "none" || !formData.forma_pagamento_id ? null : formData.forma_pagamento_id,
         empresa_id: userData.empresa_id,
         usuario_id: userData.id,
-        status: formData.status,
+        status: calculatedStatus, // Usar status calculado automaticamente
         // Novos campos para condição de recebimento
         data_vencimento: vencimentoDate ? adjustToLocalTimezone(vencimentoDate) : null,
         recebimento_realizado: formData.recebimento_realizado || false,
@@ -881,7 +1083,7 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
       console.log("usuario_id:", lancamentoData.usuario_id)
       
       // Log específico para dados de status "pago"
-      if (formData.status === 'pago') {
+      if (lancamentoData.status === 'pago') {
         devLog("PAYLOAD PARA STATUS 'PAGO':", lancamentoData, 'showPaymentStatusDetails')
       }
 
@@ -924,7 +1126,44 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
         console.error("Error.details:", result.error.details)
         console.error("Error.hint:", result.error.hint)
         console.error("Dados enviados:", JSON.stringify(lancamentoData, null, 2))
-        throw result.error
+        
+        // Se o erro é relacionado à coluna status_conciliacao, tentar sem ela
+        if (result.error.message?.includes('status_conciliacao') || 
+            result.error.details?.includes('status_conciliacao') ||
+            result.error.hint?.includes('status_conciliacao')) {
+          
+          console.log("⚠️ Erro relacionado a status_conciliacao - tentando sem este campo")
+          
+          // Remover o campo status_conciliacao e tentar novamente
+          const lancamentoDataSemConciliacao = { ...lancamentoData }
+          delete (lancamentoDataSemConciliacao as any).status_conciliacao
+          
+          console.log("Tentando salvar sem status_conciliacao:", JSON.stringify(lancamentoDataSemConciliacao, null, 2))
+          
+          let retryResult
+          if (isEditing && initialData?.id) {
+            retryResult = await supabase
+              .from("lancamentos")
+              .update(lancamentoDataSemConciliacao)
+              .eq("id", initialData.id)
+              .select()
+          } else {
+            retryResult = await supabase
+              .from("lancamentos")
+              .insert([lancamentoDataSemConciliacao])
+              .select()
+          }
+          
+          if (retryResult.error) {
+            console.error("Erro mesmo sem status_conciliacao:", retryResult.error)
+            throw retryResult.error
+          }
+          
+          console.log("✅ Sucesso na segunda tentativa (sem status_conciliacao)")
+          result = retryResult
+        } else {
+          throw result.error
+        }
       }
 
       if (!result.data || result.data.length === 0) {
@@ -936,8 +1175,22 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
       console.log("=== SUCESSO ===")
       console.log("Lançamento salvo:", result.data[0])
       
+      // Debug específico do status salvo
+      console.log("=== VERIFICAÇÃO DO STATUS SALVO ===")
+      console.log("Status que foi enviado:", lancamentoData.status)
+      console.log("Status retornado do banco:", result.data[0].status)
+      console.log("Data pagamento salva:", result.data[0].data_pagamento)
+      console.log("Valor pago salvo:", result.data[0].valor_pago)
+      console.log("ID do lançamento salvo:", result.data[0].id)
+      
       devLog("Lançamento salvo com sucesso!", undefined, 'showSaveProcess')
-
+      
+      // Limpar dados do localStorage se o salvamento foi bem-sucedido
+      if (!isEditing) {
+        clearFormDataStorage()
+        hasUnsavedChangesRef.current = false
+      }
+      
       toast({
         title: "Sucesso!",
         description: formData.tipo === "transferencia" 
@@ -964,8 +1217,8 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
       
       console.error("Erro completo ao salvar lançamento:", error)
       
-      // Log específico para erros com status "pago"
-      if (formData.status === 'pago') {
+      // Log específico para erros com status "pago"  
+      if (formData?.status === 'pago') {
         devLog("ERRO ESPECÍFICO COM STATUS 'PAGO':", {
           error: error,
           errorMessage: error.message,
@@ -1080,6 +1333,10 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
     setDate(undefined)
     setVencimentoDate(undefined)
     setDataPagamentoDate(undefined)
+    
+    // Limpar dados salvos no localStorage
+    clearFormDataStorage()
+    hasUnsavedChangesRef.current = false
   }
 
   if (loading) {
@@ -1091,15 +1348,15 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
   }
 
   return (
-    <div className="space-y-5">
-      <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Primeira linha: Tipo, Data e Número do Documento */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Tipo de Lançamento */}
-          <div className="space-y-1.5">
+    <div className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Primeira linha: Tipo, Data, Número do Documento, Forma de Pagamento e Cliente/Fornecedor (receita/despesa) */}
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* Tipo de Lançamento - menor */}
+          <div className="space-y-1.5 lg:w-40">
             <Label htmlFor="tipo">Tipo de Lançamento *</Label>
             <Select value={formData.tipo} onValueChange={(value) => handleInputChange("tipo", value)}>
-              <SelectTrigger>
+              <SelectTrigger className="h-9">
                 <SelectValue placeholder="Selecione o tipo" />
               </SelectTrigger>
               <SelectContent>
@@ -1110,12 +1367,12 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
             </Select>
           </div>
 
-          {/* Data */}
-          <div className="space-y-1.5">
+          {/* Data - menor */}
+          <div className="space-y-1.5 lg:w-40">
             <Label>Data do Lançamento *</Label>
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
+                <Button variant="outline" className="w-full h-9 justify-start text-left font-normal bg-transparent">
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {date ? format(date, "dd/MM/yyyy", { locale: ptBR }) : "dd/mm/aaaa"}
                 </Button>
@@ -1126,8 +1383,8 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
             </Popover>
           </div>
 
-          {/* Número do Documento */}
-          <div className="space-y-1.5">
+          {/* Número do Documento - médio */}
+          <div className="space-y-1.5 lg:w-48">
             <Label htmlFor="numero_documento">Número do Documento *</Label>
             <Input
               id="numero_documento"
@@ -1135,9 +1392,47 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
               value={formData.numero_documento}
               onChange={(e) => handleInputChange("numero_documento", e.target.value)}
               placeholder="NF, Boleto, Recibo..."
-              className="bg-transparent"
+              className="bg-transparent h-9"
             />
           </div>
+
+          {/* Forma de Pagamento - médio */}
+          <div className="space-y-1.5 lg:w-48">
+            <Label htmlFor="forma_pagamento_id">Forma de Pagamento</Label>
+            <Select value={formData.forma_pagamento_id} onValueChange={(value) => handleInputChange("forma_pagamento_id", value)}>
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Selecione..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Nenhuma</SelectItem>
+                {formasPagamento.map((forma) => (
+                  <SelectItem key={forma.id} value={forma.id}>
+                    {forma.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Cliente/Fornecedor - flexível (apenas para receita e despesa) */}
+          {formData.tipo !== "transferencia" && (
+            <div className="space-y-1.5 flex-1">
+              <Label>
+                {formData.tipo === "receita" ? "Cliente" : 
+                 formData.tipo === "despesa" ? "Fornecedor" : 
+                 "Cliente/Fornecedor"}
+              </Label>
+              <ClienteFornecedorSelect
+                value={formData.cliente_fornecedor_id ? [formData.cliente_fornecedor_id] : []}
+                onValueChange={(values) => handleInputChange("cliente_fornecedor_id", values[0] || "")}
+                placeholder={
+                  formData.tipo === "receita" ? "Selecione cliente (opcional)" :
+                  formData.tipo === "despesa" ? "Selecione fornecedor (opcional)" :
+                  "Selecione cliente/fornecedor (opcional)"
+                }
+              />
+            </div>
+          )}
         </div>
 
         {/* Campos condicionais baseados no tipo de lançamento */}
@@ -1145,9 +1440,9 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
           // Campos específicos para transferência
           <>
             {/* Segunda linha: Contas e Valor */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Conta Origem */}
-              <div className="space-y-1.5">
+            <div className="flex flex-col lg:flex-row gap-4">
+              {/* Conta Origem - flexível */}
+              <div className="space-y-1.5 flex-1">
                 <Label>Conta Origem *</Label>
                 <ContaBancariaSelect
                   value={formData.conta_origem_id ? [formData.conta_origem_id] : []}
@@ -1157,8 +1452,8 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
                 />
               </div>
 
-              {/* Conta Destino */}
-              <div className="space-y-1.5">
+              {/* Conta Destino - flexível */}
+              <div className="space-y-1.5 flex-1">
                 <Label>Conta Destino *</Label>
                 <ContaBancariaSelect
                   value={formData.conta_destino_id ? [formData.conta_destino_id] : []}
@@ -1168,21 +1463,22 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
                 />
               </div>
 
-              {/* Valor */}
-              <div className="space-y-1.5">
-                <Label htmlFor="valor">Valor (R$) *</Label>
+              {/* Valor - menor */}
+              <div className="space-y-1.5 lg:w-40">
+                <Label htmlFor="valor_transferencia">Valor (R$) *</Label>
                 <Input
-                  id="valor"
+                  id="valor_transferencia"
                   type="number"
                   step="0.01"
                   placeholder="0,00"
                   value={formData.valor}
                   onChange={(e) => handleInputChange("valor", e.target.value)}
+                  className="h-9"
                 />
               </div>
             </div>
 
-            {/* Histórico */}
+            {/* Descrição */}
             <div className="space-y-1.5">
               <Label htmlFor="descricao">Histórico *</Label>
               <Textarea
@@ -1190,17 +1486,18 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
                 placeholder="Histórico da transferência..."
                 value={formData.descricao}
                 onChange={(e) => handleInputChange("descricao", e.target.value)}
-                rows={3}
+                rows={2}
+                className="resize-none"
               />
             </div>
           </>
         ) : (
           // Campos para receita e despesa
           <>
-            {/* Segunda linha: Plano de Contas, Centro de Custo e Valor */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Plano de Contas */}
-              <div className="space-y-1.5">
+            {/* Segunda linha: Plano de Contas, Centro de Custo, Caixa/Banco e Valor */}
+            <div className="flex flex-col lg:flex-row gap-4">
+              {/* Plano de Contas - flexível */}
+              <div className="space-y-1.5 flex-1">
                 <Label>Plano de Contas *</Label>
                 <PlanoContaSelect
                   value={formData.plano_conta_id ? [formData.plano_conta_id] : []}
@@ -1210,8 +1507,8 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
                 />
               </div>
 
-              {/* Centro de Custo */}
-              <div className="space-y-1.5">
+              {/* Centro de Custo - flexível */}
+              <div className="space-y-1.5 flex-1">
                 <Label>Centro de Custo *</Label>
                 <CentroCustoSelect
                   value={formData.centro_custo_id ? [formData.centro_custo_id] : []}
@@ -1220,42 +1517,8 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
                 />
               </div>
 
-              {/* Valor */}
-              <div className="space-y-1.5">
-                <Label htmlFor="valor">Valor (R$) *</Label>
-                <Input
-                  id="valor"
-                  type="number"
-                  step="0.01"
-                  placeholder="0,00"
-                  value={formData.valor}
-                  onChange={(e) => handleInputChange("valor", e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Terceira linha: Cliente/Fornecedor, Caixa/Banco e Forma de Pagamento */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Cliente/Fornecedor */}
-              <div className="space-y-1.5">
-                <Label>
-                  {formData.tipo === "receita" ? "Cliente" : 
-                   formData.tipo === "despesa" ? "Fornecedor" : 
-                   "Cliente/Fornecedor"}
-                </Label>
-                <ClienteFornecedorSelect
-                  value={formData.cliente_fornecedor_id ? [formData.cliente_fornecedor_id] : []}
-                  onValueChange={(values) => handleInputChange("cliente_fornecedor_id", values[0] || "")}
-                  placeholder={
-                    formData.tipo === "receita" ? "Selecione cliente (opcional)" :
-                    formData.tipo === "despesa" ? "Selecione fornecedor (opcional)" :
-                    "Selecione cliente/fornecedor (opcional)"
-                  }
-                />
-              </div>
-
-              {/* Conta Bancária */}
-              <div className="space-y-1.5">
+              {/* Conta Bancária - flexível */}
+              <div className="space-y-1.5 flex-1">
                 <ContaBancariaSelect
                   value={formData.conta_bancaria_id ? [formData.conta_bancaria_id] : []}
                   onValueChange={(values) => handleInputChange("conta_bancaria_id", values[0] || "")}
@@ -1264,28 +1527,22 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
                 />
               </div>
 
-              {/* Forma de Pagamento */}
-              <div className="space-y-1.5">
-                <Label htmlFor="forma_pagamento_id">Forma de Pagamento</Label>
-                <Select value={formData.forma_pagamento_id} onValueChange={(value) => handleInputChange("forma_pagamento_id", value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhuma</SelectItem>
-                    {formasPagamento.map((forma) => (
-                      <SelectItem key={forma.id} value={forma.id}>
-                        {forma.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              {/* Valor - menor */}
+              <div className="space-y-1.5 lg:w-40">
+                <Label htmlFor="valor">Valor (R$) *</Label>
+                <Input
+                  id="valor"
+                  type="number"
+                  step="0.01"
+                  placeholder="0,00"
+                  value={formData.valor}
+                  onChange={(e) => handleInputChange("valor", e.target.value)}
+                  className="h-9"
+                />
               </div>
             </div>
 
-
-
-            {/* Descrição */}
+            {/* Terceira linha: Descrição */}
             <div className="space-y-1.5">
               <Label htmlFor="descricao">Descrição *</Label>
               <Textarea
@@ -1293,9 +1550,12 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
                 placeholder="Descrição detalhada do lançamento..."
                 value={formData.descricao}
                 onChange={(e) => handleInputChange("descricao", e.target.value)}
-                rows={3}
+                rows={2}
+                className="resize-none"
               />
             </div>
+
+
 
             {/* Checkbox para ativar/desativar recebimento */}
             <div className="space-y-1.5">
@@ -1315,17 +1575,17 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
 
             {/* Campos de pagamento - só aparecem se recebimento estiver ativado */}
             {formData.recebimento_realizado && (
-              <div className="bg-blue-50 p-4 rounded-lg space-y-4">
-                <h4 className="text-md font-semibold">Informações de Pagamento</h4>
+              <div className="bg-blue-50 p-4 rounded-lg space-y-3 border border-blue-200">
+                <h4 className="text-md font-semibold text-blue-900">Informações de Pagamento</h4>
                 
                 {/* Vencimento e Data de Pagamento */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {/* Vencimento */}
                   <div className="space-y-1.5">
                     <Label>Vencimento</Label>
                     <Popover>
                       <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
+                        <Button variant="outline" className="w-full h-9 justify-start text-left font-normal bg-white">
                           <CalendarIcon className="mr-2 h-4 w-4" />
                           {vencimentoDate ? format(vencimentoDate, "dd/MM/yyyy", { locale: ptBR }) : "dd/mm/aaaa"}
                         </Button>
@@ -1341,7 +1601,7 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
                     <Label>Data de Pagamento</Label>
                     <Popover>
                       <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
+                        <Button variant="outline" className="w-full h-9 justify-start text-left font-normal bg-white">
                           <CalendarIcon className="mr-2 h-4 w-4" />
                           {dataPagamentoDate ? format(dataPagamentoDate, "dd/MM/yyyy", { locale: ptBR }) : "dd/mm/aaaa"}
                         </Button>
@@ -1354,7 +1614,7 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
                 </div>
 
                 {/* Juros, Multa, Desconto e Valor Pago */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   {/* Juros */}
                   <div className="space-y-1.5">
                     <Label htmlFor="juros">Juros (R$)</Label>
@@ -1365,6 +1625,7 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
                       placeholder="0,00"
                       value={formData.juros}
                       onChange={(e) => handleInputChange("juros", e.target.value)}
+                      className="h-9 bg-white"
                     />
                   </div>
 
@@ -1378,6 +1639,7 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
                       placeholder="0,00"
                       value={formData.multa}
                       onChange={(e) => handleInputChange("multa", e.target.value)}
+                      className="h-9 bg-white"
                     />
                   </div>
 
@@ -1391,6 +1653,7 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
                       placeholder="0,00"
                       value={formData.desconto}
                       onChange={(e) => handleInputChange("desconto", e.target.value)}
+                      className="h-9 bg-white"
                     />
                   </div>
 
@@ -1411,6 +1674,7 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
                         const valorCalculado = calcularValorPago()
                         handleInputChange("valor_pago", valorCalculado.toString())
                       }}
+                      className="h-9 bg-white"
                     />
                   </div>
                 </div>
@@ -1421,23 +1685,21 @@ export function LancamentosForm({ onSuccess, initialData, isEditing = false }: L
             <div className="hidden">
               <input type="hidden" value={formData.status} />
             </div>
-
-
           </>
         )}
 
-        {/* Botões */}
-        <div className="flex space-x-2 pt-4">
-          <Button type="submit" className="flex-1" disabled={saving}>
+        {/* Botões - Posicionados no rodapé */}
+        <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200 mt-4">
+          <Button type="button" variant="outline" onClick={handleClear} disabled={saving} className="px-6">
+            <X className="w-4 h-4 mr-2" />
+            Limpar
+          </Button>
+          <Button type="submit" disabled={saving} className="px-8 bg-blue-600 hover:bg-blue-700">
             <Save className="w-4 h-4 mr-2" />
             {saving 
               ? "Salvando..." 
               : isEditing ? "Atualizar Lançamento" : "Salvar Lançamento"
             }
-          </Button>
-          <Button type="button" variant="outline" onClick={handleClear} disabled={saving}>
-            <X className="w-4 h-4 mr-2" />
-            Limpar
           </Button>
         </div>
       </form>

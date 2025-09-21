@@ -14,10 +14,26 @@ export function useColumnsConfig() {
     const savedColumns = localStorage.getItem(STORAGE_KEY)
     if (savedColumns) {
       try {
-        const parsedColumns = JSON.parse(savedColumns)
+        const parsedColumns = JSON.parse(savedColumns) as ColumnConfig[]
         // Validar se a estrutura está correta
         if (Array.isArray(parsedColumns) && parsedColumns.length > 0) {
-          setColumns(parsedColumns)
+          // Migração: garantir que todas as colunas padrão estejam presentes
+          const migratedColumns = DEFAULT_COLUMNS.map(defaultCol => {
+            const savedCol = parsedColumns.find(col => col.key === defaultCol.key)
+            // Se a coluna não existe na configuração salva, usar a padrão
+            return savedCol || defaultCol
+          })
+          
+          // Verificar se houve mudanças para atualizar o localStorage
+          if (migratedColumns.length !== parsedColumns.length || 
+              migratedColumns.some((col, index) => !parsedColumns.find(saved => saved.key === col.key))) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(migratedColumns))
+            console.log("Configuração de colunas migrada com novas colunas:", migratedColumns)
+          }
+          
+          setColumns(migratedColumns)
+        } else {
+          setColumns(DEFAULT_COLUMNS)
         }
       } catch (error) {
         console.error("Erro ao carregar configuração de colunas:", error)

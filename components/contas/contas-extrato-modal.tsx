@@ -145,7 +145,7 @@ export function ContasExtratoModal({ isOpen, onClose, conta }: ContasExtratoModa
               <TableBody>
                 {mockMovimentacoes.map((mov) => (
                   <TableRow key={mov.id}>
-                    <TableCell className="font-mono text-sm">
+                    <TableCell className="text-sm">
                       {new Date(mov.data).toLocaleDateString("pt-BR")}
                     </TableCell>
                     <TableCell>{mov.descricao}</TableCell>

@@ -632,7 +632,7 @@ export function RelatoriosVisualizacao({ relatorioSelecionado }: RelatoriosVisua
                   <TableBody>
                     {lancamentosPeriodoData.map((lancamento) => (
                       <TableRow key={lancamento.id}>
-                        <TableCell className="font-mono text-sm">
+                        <TableCell className="text-sm">
                           {new Date(lancamento.data).toLocaleDateString("pt-BR")}
                         </TableCell>
                         <TableCell>
@@ -763,7 +763,7 @@ export function RelatoriosVisualizacao({ relatorioSelecionado }: RelatoriosVisua
                         key={movimento.id}
                         className={movimento.tipo === "saldo-inicial" ? "bg-gray-50 font-semibold" : ""}
                       >
-                        <TableCell className="font-mono text-sm">
+                        <TableCell className="text-sm">
                           {movimento.tipo === "saldo-inicial"
                             ? "01/01/2024"
                             : new Date(movimento.data).toLocaleDateString("pt-BR")}
@@ -973,7 +973,7 @@ export function RelatoriosVisualizacao({ relatorioSelecionado }: RelatoriosVisua
                               key={index}
                               className={movimento.categoria === "saldo-inicial" ? "bg-gray-50 font-semibold" : ""}
                             >
-                              <TableCell className="font-mono text-sm">
+                              <TableCell className="text-sm">
                                 {movimento.categoria === "saldo-inicial"
                                   ? "01/01"
                                   : new Date(movimento.data).toLocaleDateString("pt-BR").slice(0, 5)}
@@ -1027,7 +1027,7 @@ export function RelatoriosVisualizacao({ relatorioSelecionado }: RelatoriosVisua
                         <TableBody>
                           {fluxoCaixaProjecao.map((projecao, index) => (
                             <TableRow key={index} className="bg-blue-50">
-                              <TableCell className="font-mono text-sm">
+                              <TableCell className="text-sm">
                                 {new Date(projecao.data).toLocaleDateString("pt-BR").slice(0, 5)}
                               </TableCell>
                               <TableCell className="italic">{projecao.descricao}</TableCell>

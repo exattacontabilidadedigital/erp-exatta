@@ -46,7 +46,7 @@ export interface ReconciliationSession {
   id: string;
   bank_account_id: string;
   created_at: string;
-  updated_at: string;
+  data_atualizacao: string;
   status: 'active' | 'completed' | 'cancelled';
 }
 

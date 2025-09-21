@@ -1,0 +1,656 @@
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase/client';
+import { useAuth } from '@/contexts/auth-context';
+
+// Hook para buscar estatísticas do dashboard
+export function useImportStats() {
+  const [stats, setStats] = useState({
+    totalBatches: 0,
+    pendingEntries: 0,
+    confirmedToday: 0,
+    rejectedToday: 0,
+    avgConfidence: 0,
+    processingTime: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { userData } = useAuth();
+
+  const fetchStats = async () => {
+    if (!userData?.empresa_id) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Buscar total de lotes
+      const { count: totalBatches } = await supabase
+        .from('lotes_importacao')
+        .select('*', { count: 'exact', head: true })
+        .eq('usuario_upload', userData.id);
+
+      // Buscar IDs dos lotes do usuário primeiro
+      const { data: userBatches } = await supabase
+        .from('lotes_importacao')
+        .select('id')
+        .eq('usuario_upload', userData.id);
+
+      const batchIds = userBatches?.map(batch => batch.id) || [];
+
+      // Buscar pré-lançamentos pendentes
+      const { count: pendingEntries } = await supabase
+        .from('pre_lancamentos')
+        .select('*', { count: 'exact', head: true })
+        .eq('status_aprovacao', 'pendente')
+        .in('lote_id', batchIds);
+
+      // Buscar aprovações/rejeições de hoje
+      const today = new Date().toISOString().split('T')[0];
+      
+      const { count: confirmedToday } = await supabase
+        .from('pre_lancamentos')
+        .select('*', { count: 'exact', head: true })
+        .eq('status_aprovacao', 'aprovado')
+        .gte('data_aprovacao', `${today}T00:00:00`)
+        .lt('data_aprovacao', `${today}T23:59:59`)
+        .in('lote_id', batchIds);
+
+      const { count: rejectedToday } = await supabase
+        .from('pre_lancamentos')
+        .select('*', { count: 'exact', head: true })
+        .eq('status_aprovacao', 'rejeitado')
+        .gte('data_aprovacao', `${today}T00:00:00`)
+        .lt('data_aprovacao', `${today}T23:59:59`)
+        .in('lote_id', batchIds);
+
+      // Buscar média de score de matching
+      const { data: scoresData } = await supabase
+        .from('pre_lancamentos')
+        .select('score_matching')
+        .not('score_matching', 'is', null)
+        .in('lote_id', batchIds);
+
+      const avgConfidence = scoresData && scoresData.length > 0 
+        ? scoresData.reduce((sum, item) => sum + (item.score_matching || 0), 0) / scoresData.length
+        : 0;
+
+      setStats({
+        totalBatches: totalBatches || 0,
+        pendingEntries: pendingEntries || 0,
+        confirmedToday: confirmedToday || 0,
+        rejectedToday: rejectedToday || 0,
+        avgConfidence: Math.round(avgConfidence * 100) / 100,
+        processingTime: 0, // TODO: Implementar cálculo de tempo de processamento
+      });
+
+    } catch (err) {
+      console.error('Erro ao buscar estatísticas:', err);
+      setError('Erro ao carregar estatísticas');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStats();
+  }, [userData?.id, userData?.empresa_id]);
+
+  return { stats, loading, error, refetch: fetchStats };
+}
+
+// Hook para buscar lotes de importação
+export function useImportBatches() {
+  const [batches, setBatches] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { userData } = useAuth();
+
+  const fetchBatches = async () => {
+    if (!userData?.id) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log('🔍 Buscando lotes para usuário:', userData.id);
+
+      // Primeiro tentar com usuario_upload (como estava funcionando antes)
+      const { data, error: dbError } = await supabase
+        .from('lotes_importacao')
+        .select(`
+          *,
+          modelos_importacao (
+            nome,
+            tipo_arquivo
+          )
+        `)
+        .eq('usuario_upload', userData.id)
+        .order('data_upload', { ascending: false });
+
+      if (dbError) {
+        console.error('❌ Erro na query com JOIN:', dbError);
+        // Se falhar, tentar sem o JOIN
+        const { data: simpleData, error: simpleError } = await supabase
+          .from('lotes_importacao')
+          .select('*')
+          .eq('usuario_upload', userData.id)
+          .order('data_upload', { ascending: false });
+
+        if (simpleError) {
+          console.error('❌ Erro na query simples:', simpleError);
+          throw simpleError;
+        }
+        
+        console.log('✅ Query simples funcionou, lotes encontrados:', simpleData?.length || 0);
+        setBatches(simpleData || []);
+      } else {
+        console.log('✅ Query com JOIN funcionou, lotes encontrados:', data?.length || 0);
+        setBatches(data || []);
+      }
+
+    } catch (err) {
+      console.error('❌ Erro ao buscar lotes:', err);
+      setError(`Erro ao carregar lotes de importação: ${err instanceof Error ? err.message : 'Erro desconhecido'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBatches();
+  }, [userData?.id, userData?.empresa_id]);
+
+  return { batches, loading, error, refetch: fetchBatches };
+}
+
+// Hook para buscar pré-lançamentos pendentes
+export function usePendingEntries() {
+  const [entries, setEntries] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { userData } = useAuth();
+
+  const fetchPendingEntries = async () => {
+    console.log('🚀 INICIANDO fetchPendingEntries');
+    
+    // FORÇAR BUSCA DE TODOS OS PRÉ-LANÇAMENTOS (TEMPORÁRIO PARA DEBUG)
+    try {
+      setLoading(true);
+      setError(null);
+      
+      console.log('🔍 BUSCANDO TODOS OS PRÉ-LANÇAMENTOS...');
+      const { data: todosPreLancamentos, error: todoError } = await supabase
+        .from('pre_lancamentos')
+        .select('*')
+        .order('data_criacao', { ascending: false });
+
+      if (todoError) {
+        console.error('❌ Erro ao buscar pré-lançamentos:', todoError);
+        setError(`Erro: ${todoError.message}`);
+        return;
+      }
+
+      console.log('✅ PRÉ-LANÇAMENTOS ENCONTRADOS:', todosPreLancamentos?.length || 0);
+      if (todosPreLancamentos && todosPreLancamentos.length > 0) {
+        console.log('📋 Primeiro pré-lançamento:', todosPreLancamentos[0]);
+      }
+      
+      setEntries(todosPreLancamentos || []);
+    } catch (err) {
+      console.error('❌ ERRO:', err);
+      setError(`Erro: ${err instanceof Error ? err.message : 'Erro desconhecido'}`);
+    } finally {
+      setLoading(false);
+    }
+    
+    if (!userData?.empresa_id) {
+      console.log('❌ Usuário não tem empresa_id:', userData);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log('🔍 INICIANDO BUSCA DE PRÉ-LANÇAMENTOS');
+      console.log('👤 userData completo:', JSON.stringify(userData, null, 2));
+
+      // PRIMEIRO: Tentar buscar TODOS os pré-lançamentos (sem filtro)
+      console.log('\n🔍 TESTE 1: Buscando TODOS os pré-lançamentos...');
+      const { data: todosPreLancamentos, error: todoError } = await supabase
+        .from('pre_lancamentos')
+        .select('*')
+        .limit(50);
+
+      if (todoError) {
+        console.error('❌ Erro ao buscar todos os pré-lançamentos:', todoError);
+      } else {
+        console.log('📊 TODOS os pré-lançamentos encontrados:', todosPreLancamentos?.length || 0);
+        if (todosPreLancamentos && todosPreLancamentos.length > 0) {
+          console.log('📋 Primeiro pré-lançamento (de todos):', todosPreLancamentos[0]);
+          console.log('📋 Lotes únicos encontrados:', [...new Set(todosPreLancamentos.map(p => p.lote_id))]);
+        }
+      }
+
+      // SEGUNDO: Buscar lotes do usuário
+      console.log('\n🔍 TESTE 2: Buscando lotes do usuário...');
+      const { data: userBatches, error: batchError } = await supabase
+        .from('lotes_importacao')
+        .select('id, nome_arquivo, data_upload, usuario_upload')
+        .eq('usuario_upload', userData.id);
+
+      if (batchError) {
+        console.error('❌ Erro ao buscar lotes:', batchError);
+        // Não throw aqui, vamos continuar com fallback
+      }
+
+      console.log('📋 Lotes do usuário encontrados:', userBatches);
+      const batchIds = userBatches?.map(batch => batch.id) || [];
+      console.log('📋 IDs dos lotes do usuário:', batchIds);
+
+      if (batchIds.length === 0) {
+        console.log('⚠️ USUÁRIO NÃO TEM LOTES - Usando fallback para mostrar todos');
+        
+        // Se não tem lotes, mostrar todos os pré-lançamentos
+        if (todosPreLancamentos && todosPreLancamentos.length > 0) {
+          console.log('✅ Exibindo todos os pré-lançamentos como fallback');
+          setEntries(todosPreLancamentos);
+        } else {
+          setEntries([]);
+        }
+        return;
+      }
+
+      // TERCEIRO: Buscar pré-lançamentos dos lotes do usuário
+      console.log('\n🔍 TESTE 3: Buscando pré-lançamentos dos lotes do usuário...');
+      const { data, error: dbError } = await supabase
+        .from('pre_lancamentos')
+        .select('*')
+        .in('lote_id', batchIds)
+        .order('data_criacao', { ascending: false });
+
+      if (dbError) {
+        console.error('❌ Erro na query de pré-lançamentos:', dbError);
+        // Em caso de erro, usar fallback
+        if (todosPreLancamentos && todosPreLancamentos.length > 0) {
+          console.log('⚠️ Usando fallback devido ao erro');
+          setEntries(todosPreLancamentos);
+        } else {
+          throw dbError;
+        }
+        return;
+      }
+
+      console.log('✅ Pré-lançamentos dos lotes do usuário:', data?.length || 0);
+      if (data && data.length > 0) {
+        console.log('📊 Primeiro pré-lançamento do usuário:', data[0]);
+        console.log('📊 Distribuição por status:', {
+          pendente: data.filter(e => e.status_aprovacao === 'pendente').length,
+          aprovado: data.filter(e => e.status_aprovacao === 'aprovado').length,
+          rejeitado: data.filter(e => e.status_aprovacao === 'rejeitado').length,
+        });
+      }
+      
+      console.log('🎯 DEFININDO ENTRIES:', data?.length || 0, 'registros');
+      setEntries(data || []);
+
+    } catch (err) {
+      console.error('❌ ERRO FINAL ao buscar pré-lançamentos:', err);
+      setError(`Erro ao carregar pré-lançamentos: ${err instanceof Error ? err.message : 'Erro desconhecido'}`);
+    } finally {
+      setLoading(false);
+      console.log('🏁 FINALIZANDO fetchPendingEntries');
+    }
+  };
+      console.log('👤 userData:', userData);
+
+      // Buscar IDs dos lotes do usuário primeiro
+      console.log('🔍 Buscando lotes do usuário...');
+      const { data: userBatches, error: batchError } = await supabase
+        .from('lotes_importacao')
+        .select('id, nome_arquivo, data_upload, usuario_upload')
+        .eq('usuario_upload', userData.id);
+
+      if (batchError) {
+        console.error('❌ Erro ao buscar lotes:', batchError);
+        throw batchError;
+      }
+
+      console.log('📋 Lotes encontrados:', userBatches);
+      const batchIds = userBatches?.map(batch => batch.id) || [];
+      console.log('📋 IDs dos lotes:', batchIds);
+
+      if (batchIds.length === 0) {
+        console.log('⚠️ Nenhum lote encontrado para o usuário, buscando todos os pré-lançamentos...');
+        
+        // Buscar todos os pré-lançamentos como fallback
+        const { data: allEntries, error: allError } = await supabase
+          .from('pre_lancamentos')
+          .select('*')
+          .order('data_criacao', { ascending: false })
+          .limit(50);
+        
+        if (allError) {
+          console.error('❌ Erro ao buscar todos os pré-lançamentos:', allError);
+        } else {
+          console.log('📊 Total de pré-lançamentos (fallback):', allEntries?.length || 0);
+          if (allEntries && allEntries.length > 0) {
+            console.log('📋 Primeiro pré-lançamento:', allEntries[0]);
+          }
+          setEntries(allEntries || []);
+        }
+        return;
+      }
+
+      // Buscar pré-lançamentos
+      console.log('🔍 Buscando pré-lançamentos com lote_ids:', batchIds);
+      const { data, error: dbError } = await supabase
+        .from('pre_lancamentos')
+        .select('*')
+        .in('lote_id', batchIds)
+        .order('data_criacao', { ascending: false });
+
+      if (dbError) {
+        console.error('❌ Erro na query de pré-lançamentos:', dbError);
+        throw dbError;
+      }
+
+      console.log('✅ Pré-lançamentos encontrados:', data?.length || 0);
+      if (data && data.length > 0) {
+        console.log('📊 Primeiro pré-lançamento encontrado:', data[0]);
+        console.log('📊 Distribuição por status:', {
+          pendente: data.filter(e => e.status_aprovacao === 'pendente').length,
+          aprovado: data.filter(e => e.status_aprovacao === 'aprovado').length,
+          rejeitado: data.filter(e => e.status_aprovacao === 'rejeitado').length,
+        });
+      }
+      
+      console.log('🎯 DEFININDO ENTRIES:', data?.length || 0, 'registros');
+      setEntries(data || []);
+
+    } catch (err) {
+      console.error('❌ ERRO FINAL ao buscar pré-lançamentos:', err);
+      setError(`Erro ao carregar pré-lançamentos: ${err instanceof Error ? err.message : 'Erro desconhecido'}`);
+    } finally {
+      setLoading(false);
+      console.log('🏁 FINALIZANDO fetchPendingEntries');
+    }
+  };
+
+  useEffect(() => {
+    fetchPendingEntries();
+  }, [userData?.id, userData?.empresa_id]);
+
+  const approveEntry = async (entryId: string) => {
+    if (!userData?.id) return { success: false, error: 'Usuário não autenticado' };
+
+    try {
+      const { error } = await supabase
+        .from('pre_lancamentos')
+        .update({
+          status_aprovacao: 'aprovado',
+          usuario_aprovacao: userData.id,
+          data_aprovacao: new Date().toISOString(),
+        })
+        .eq('id', entryId);
+
+      if (error) throw error;
+      
+      // Atualizar lista local
+      setEntries(prev => prev.filter(entry => entry.id !== entryId));
+      
+      return { success: true };
+    } catch (err) {
+      console.error('Erro ao aprovar lançamento:', err);
+      return { success: false, error: 'Erro ao aprovar lançamento' };
+    }
+  };
+
+  const rejectEntry = async (entryId: string, reason?: string) => {
+    if (!userData?.id) return { success: false, error: 'Usuário não autenticado' };
+
+    try {
+      const { error } = await supabase
+        .from('pre_lancamentos')
+        .update({
+          status_aprovacao: 'rejeitado',
+          usuario_aprovacao: userData.id,
+          data_aprovacao: new Date().toISOString(),
+          motivo_rejeicao: reason,
+        })
+        .eq('id', entryId);
+
+      if (error) throw error;
+      
+      // Atualizar lista local
+      setEntries(prev => prev.filter(entry => entry.id !== entryId));
+      
+      return { success: true };
+    } catch (err) {
+      console.error('Erro ao rejeitar lançamento:', err);
+      return { success: false, error: 'Erro ao rejeitar lançamento' };
+    }
+  };
+
+  const bulkApprove = async (entryIds: string[]) => {
+    if (!userData?.id) return { success: false, error: 'Usuário não autenticado' };
+
+    try {
+      const { error } = await supabase
+        .from('pre_lancamentos')
+        .update({
+          status_aprovacao: 'aprovado',
+          aprovado_por: userData.id,
+          data_aprovacao: new Date().toISOString(),
+        })
+        .in('id', entryIds);
+
+      if (error) throw error;
+      
+      // Atualizar lista local
+      setEntries(prev => prev.filter(entry => !entryIds.includes(entry.id)));
+      
+      return { success: true };
+    } catch (err) {
+      console.error('Erro ao aprovar lançamentos:', err);
+      return { success: false, error: 'Erro ao aprovar lançamentos' };
+    }
+  };
+
+  return { 
+    entries, 
+    loading, 
+    error, 
+    refetch: fetchPendingEntries,
+    approveEntry,
+    rejectEntry,
+    bulkApprove
+  };
+}
+
+// Hook para gerenciar templates de importação
+export function useImportTemplates() {
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { userData } = useAuth();
+
+  const fetchTemplates = async () => {
+    if (!userData?.empresa_id && !userData?.id) {
+      console.log('⚠️ Usuário não tem empresa_id nem id, abortando busca');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log('🔍 INICIANDO BUSCA DE TEMPLATES');
+      console.log('👤 Dados do usuário:', userData);
+
+      // FORÇAR BUSCA GERAL PRIMEIRO (para debug)
+      console.log('🔍 Fazendo busca geral de templates...');
+      const { data: allTemplates, error: generalError } = await supabase
+        .from('templates_importacao')
+        .select('*')
+        .order('nome', { ascending: true });
+
+      if (generalError) {
+        console.error('❌ Erro na busca geral:', generalError);
+        throw generalError;
+      }
+
+      console.log('📊 TODOS OS TEMPLATES ENCONTRADOS:', allTemplates);
+      console.log('📊 Total de templates no banco:', allTemplates?.length || 0);
+
+      // Filtrar por empresa se possível
+      let filteredTemplates = allTemplates || [];
+      if (userData.empresa_id && allTemplates) {
+        const templatesEmpresa = allTemplates.filter(t => t.empresa_id === userData.empresa_id);
+        console.log('🏢 Templates da empresa específica:', templatesEmpresa);
+        console.log('🏢 Total da empresa:', templatesEmpresa.length);
+        
+        if (templatesEmpresa.length > 0) {
+          filteredTemplates = templatesEmpresa;
+        }
+      }
+
+      console.log('✅ TEMPLATES FINAIS PARA EXIBIÇÃO:', filteredTemplates);
+      setTemplates(filteredTemplates);
+
+    } catch (err) {
+      console.error('❌ ERRO FINAL ao buscar templates:', err);
+      setError(`Erro ao carregar templates: ${err instanceof Error ? err.message : 'Erro desconhecido'}`);
+    } finally {
+      setLoading(false);
+      console.log('🏁 BUSCA DE TEMPLATES FINALIZADA');
+    }
+  };
+
+  useEffect(() => {
+    fetchTemplates();
+  }, [userData?.id, userData?.empresa_id]);
+
+  const createTemplate = async (templateData: any) => {
+    if (!userData?.id) return { success: false, error: 'Usuário não autenticado' };
+
+    try {
+      console.log('🔍 Criando template com dados:', templateData);
+      console.log('👤 Dados do usuário:', userData);
+      
+      // Verificar campos obrigatórios
+      if (!templateData.nome) {
+        throw new Error('Nome do template é obrigatório');
+      }
+      if (!userData.empresa_id) {
+        throw new Error('ID da empresa é obrigatório');
+      }
+
+      const insertData: any = {
+        empresa_id: userData.empresa_id,
+        nome: templateData.nome,
+        descricao_padrao: templateData.descricao_padrao || '',
+        regex_padrao: templateData.regex_padrao || '',
+        categoria: templateData.categoria || '',
+        limite_confianca: templateData.limite_confianca || 0.8,
+        confirmacao_automatica: templateData.confirmacao_automatica || false,
+        ativo: templateData.ativo !== undefined ? templateData.ativo : true,
+        plano_conta_id: templateData.plano_conta_id || null,
+        centro_custo_id: templateData.centro_custo_id || null,
+        cliente_fornecedor_id: templateData.cliente_fornecedor_id || null,
+        conta_bancaria_id: templateData.conta_bancaria_id || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      console.log('📝 Dados para inserção (nova estrutura templates_importacao):', insertData);
+
+      const { data, error } = await supabase
+        .from('templates_importacao')
+        .insert(insertData)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('❌ Erro detalhado ao criar template:', {
+          error,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw error;
+      }
+
+      console.log('✅ Template criado com sucesso:', data);
+      
+      // Atualizar lista local
+      setTemplates(prev => [...prev, data]);
+      
+      return { success: true, data };
+    } catch (err) {
+      console.error('❌ Erro ao criar template:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido';
+      return { success: false, error: `Erro ao criar template: ${errorMessage}` };
+    }
+  };
+
+  const updateTemplate = async (id: string, templateData: any) => {
+    if (!userData?.id) return { success: false, error: 'Usuário não autenticado' };
+
+    try {
+      const { data, error } = await supabase
+        .from('templates_importacao')
+        .update({
+          ...templateData,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Atualizar lista local
+      setTemplates(prev => prev.map(template => 
+        template.id === id ? data : template
+      ));
+      
+      return { success: true, data };
+    } catch (err) {
+      console.error('Erro ao atualizar template:', err);
+      return { success: false, error: 'Erro ao atualizar template' };
+    }
+  };
+
+  const deleteTemplate = async (id: string) => {
+    if (!userData?.id) return { success: false, error: 'Usuário não autenticado' };
+
+    try {
+      const { error } = await supabase
+        .from('templates_importacao')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // Atualizar lista local
+      setTemplates(prev => prev.filter(template => template.id !== id));
+      
+      return { success: true };
+    } catch (err) {
+      console.error('Erro ao deletar template:', err);
+      return { success: false, error: 'Erro ao deletar template' };
+    }
+  };
+
+  return { 
+    templates, 
+    loading, 
+    error, 
+    createTemplate, 
+    updateTemplate, 
+    deleteTemplate,
+    refetch: fetchTemplates
+  };
+}

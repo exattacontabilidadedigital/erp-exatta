@@ -65,7 +65,7 @@ export default function BancosPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50" style={{ fontFamily: 'GeistSans, Arial, sans-serif' }}>
+    <div className="min-h-screen bg-gray-50">
         <BancosHeader onNovoBanco={handleNovoBanco} />
         <main className="container mx-auto px-4 py-6">
           <BancosList onEdit={handleEditBanco} onDelete={handleDeleteBanco} />

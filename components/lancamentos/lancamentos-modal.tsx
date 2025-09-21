@@ -33,11 +33,13 @@ export function LancamentosModal({ isOpen, onClose, lancamento, isEditing = fals
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-8xl max-h-[90vh] overflow-y-auto" aria-describedby="lancamentos-modal-description">
-        <DialogHeader>
-          <DialogTitle>{isEditing ? "Editar Lançamento" : "Novo Lançamento"}</DialogTitle>
-        </DialogHeader>
-        <div id="lancamentos-modal-description">
+      <DialogContent className="!w-screen !h-screen !max-w-none !max-h-none !rounded-none !m-0 !p-0 overflow-y-auto" aria-describedby="lancamentos-modal-description">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <DialogHeader className="text-left mb-4">
+            <DialogTitle className="text-left text-xl font-semibold">{isEditing ? "Editar Lançamento" : "Novo Lançamento"}</DialogTitle>
+            <div className="border-b border-gray-200 mt-4"></div>
+          </DialogHeader>
+          <div id="lancamentos-modal-description">
           <ErrorBoundary
             fallback={
               <div className="p-4 border border-red-300 bg-red-50 rounded-md">
@@ -50,6 +52,7 @@ export function LancamentosModal({ isOpen, onClose, lancamento, isEditing = fals
           >
             <LancamentosForm onSuccess={handleSuccess} initialData={lancamento} isEditing={isEditing} />
           </ErrorBoundary>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

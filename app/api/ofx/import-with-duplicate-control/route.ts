@@ -7,11 +7,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { OFXParserWithDuplicateControl } from '@/lib/ofx-parser-duplicate-control';
 
-const supabase = createClient();
-
 export async function POST(request: NextRequest) {
   try {
     console.log('🚀 Iniciando importação OFX com controle de duplicidade...');
+
+    const supabase = createClient();
 
     const formData = await request.formData();
     const file = formData.get('file') as File;
@@ -238,6 +238,8 @@ export async function POST(request: NextRequest) {
 // Endpoint para verificar duplicidade sem importar
 export async function GET(request: NextRequest) {
   try {
+    const supabase = createClient();
+    
     const { searchParams } = new URL(request.url);
     const fileHash = searchParams.get('fileHash');
     const contaBancariaId = searchParams.get('contaBancariaId');

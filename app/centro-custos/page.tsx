@@ -167,7 +167,7 @@ export default function CentroCustosPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50" style={{ fontFamily: 'GeistSans, Arial, sans-serif' }}>
+    <div className="min-h-screen bg-gray-50">
       {/* Modais de cadastro */}
       {isDepartamentosModalOpen && (
         <Dialog open={isDepartamentosModalOpen} onOpenChange={() => setIsDepartamentosModalOpen(false)}>

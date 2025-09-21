@@ -1,0 +1,21 @@
+Data,Descricao,Valor,Tipo,Categoria
+2024-12-01,"Pagamento de Fornecedor XYZ Ltda",-1500.50,saida,fornecedor
+2024-12-01,"Recebimento Cliente ABC",-2300.75,entrada,cliente
+2024-12-02,"Compra de Material de Escritório",-250.00,saida,despesa
+2024-12-02,"Venda de Produtos",-4200.00,entrada,vendas
+2024-12-03,"Pagamento de Aluguel",-1800.00,saida,aluguel
+2024-12-03,"Recebimento de Serviços",-3500.00,entrada,servicos
+2024-12-04,"Pagamento de Energia Elétrica",-380.45,saida,utilidades
+2024-12-04,"Recebimento PIX Cliente DEF",-1250.00,entrada,cliente
+2024-12-05,"Compra de Equipamentos",-5200.00,saida,equipamentos
+2024-12-05,"Venda à Vista",-850.00,entrada,vendas
+2024-12-06,"Pagamento de Telefone",-120.00,saida,telecomunicacoes
+2024-12-06,"Transferência Bancária Recebida",-2800.00,entrada,transferencia
+2024-12-07,"Pagamento de Impostos",-940.30,saida,impostos
+2024-12-07,"Recebimento Cartão de Crédito",-1650.00,entrada,vendas
+2024-12-08,"Pagamento de Água",-85.20,saida,utilidades
+2024-12-08,"Depósito em Conta",-3200.00,entrada,deposito
+2024-12-09,"Compra de Combustível",-180.00,saida,combustivel
+2024-12-09,"Recebimento Boleto",-2100.00,entrada,cobranca
+2024-12-10,"Pagamento de Internet",-99.90,saida,telecomunicacoes
+2024-12-10,"Venda Parcelada",-4800.00,entrada,vendas
